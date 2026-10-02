@@ -1,0 +1,62 @@
+# PayBridge — Educational Sandbox — No Real Money Movement.
+#
+#   cp .env.example .env
+#   docker compose up
+#
+# Starts PostgreSQL, Redis, the API (migrations run on start; BullMQ worker in-process) and the web app.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: paybridge
+      POSTGRES_PASSWORD: paybridge
+      POSTGRES_DB: paybridge
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paybridge -d paybridge"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://paybridge:paybridge@postgres:5432/paybridge
+      REDIS_URL: redis://redis:6379
+      QUEUE_DRIVER: bullmq
+      WORKER_INLINE: "true"
+      PORT: "4000"
+      WEBHOOK_TARGET_URL: http://localhost:4000
+      CORS_ORIGINS: http://localhost:3000
+      # Seeds fictional demo data on first start (only when APP_ENV=development).
+      SEED_ON_START: "true"
+    ports: ["4000:4000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+      args:
+        API_URL: http://api:4000
+    ports: ["3000:3000"]
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  pgdata:

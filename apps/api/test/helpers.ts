@@ -183,21 +183,22 @@ export async function setVelocityLimit(t: TestApp, adminToken: string, maxCount:
   await t.http.patch(`/api/v1/admin/compliance/rules/${rule.id}`).set(auth(adminToken)).send({ parameters: { maxCount, windowHours: 24 } }).expect(200);
 }
 
+type AnyFn = (...args: any[]) => any;
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'ALL', 'OPTIONS', 'HEAD'];
 
 /** Every route the application exposes, read from controller metadata. */
-export function listRoutes(t: TestApp): { method: string; path: string; handler: Function; controller: Function; name: string }[] {
+export function listRoutes(t: TestApp): { method: string; path: string; handler: AnyFn; controller: AnyFn; name: string }[] {
   const routes = [];
   for (const wrapper of t.app.get(DiscoveryService, { strict: false }).getControllers()) {
     const proto = Object.getPrototypeOf(wrapper.instance);
-    const base = String(Reflect.getMetadata("path", wrapper.metatype as Function) ?? '').replace(/^\/|\/$/g, '');
+    const base = String(Reflect.getMetadata("path", wrapper.metatype as AnyFn) ?? '').replace(/^\/|\/$/g, '');
     for (const name of Object.getOwnPropertyNames(proto)) {
       const handler = proto[name];
       if (name === 'constructor' || typeof handler !== 'function') continue;
       const sub = Reflect.getMetadata('path', handler);
       if (sub === undefined) continue;
       const path = [base, String(sub).replace(/^\/|\/$/g, '')].filter(Boolean).join('/');
-      routes.push({ method: HTTP_METHODS[Reflect.getMetadata('method', handler)], path: `/${path}`, handler, controller: wrapper.metatype as Function, name: `${wrapper.name}.${name}` });
+      routes.push({ method: HTTP_METHODS[Reflect.getMetadata('method', handler)], path: `/${path}`, handler, controller: wrapper.metatype as AnyFn, name: `${wrapper.name}.${name}` });
     }
   }
   return routes;
