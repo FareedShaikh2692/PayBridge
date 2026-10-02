@@ -10,6 +10,9 @@
 generator client {
   provider   = "prisma-client-js"
   engineType = "client" // Rust-free client with the pg driver adapter: no native engine binary to ship
+  // Generated inside this package (not node_modules) so that bundlers and serverless file tracing pick up the
+  // client together with its WebAssembly query compiler.
+  output     = "../generated/client"
 }
 
 datasource db {

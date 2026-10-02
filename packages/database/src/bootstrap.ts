@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '../generated/client';
 import { ACCOUNTS, PERMISSIONS, ROLES, ROLE_PERMISSIONS, ROLE_SCOPE } from '@paybridge/shared';
 
 /** docs/COMPLIANCE.md §3 */
