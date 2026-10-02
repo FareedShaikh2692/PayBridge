@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { @apply bg-surface-sunken text-ink antialiased; }
+  body { @apply min-h-screen text-sm; }
+  h1 { @apply text-xl font-semibold tracking-tight; }
+  h2 { @apply text-base font-semibold; }
+  :focus-visible { @apply outline-none ring-2 ring-accent ring-offset-2; }
+  /* Financial figures line up digit for digit. */
+  .num { font-variant-numeric: tabular-nums; }
+}
+
+@layer components {
+  .card { @apply rounded-lg border border-surface-line bg-surface shadow-card; }
+  .btn { @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-transparent px-3.5 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply btn bg-accent text-white hover:bg-accent-hover; }
+  .btn-secondary { @apply btn border-surface-line bg-surface text-ink hover:bg-surface-sunken; }
+  .btn-danger { @apply btn bg-bad text-white hover:opacity-90; }
+  .btn-ghost { @apply btn text-accent hover:bg-accent-soft; }
+  .input { @apply block w-full rounded-md border border-surface-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:bg-surface-sunken disabled:text-ink-muted; }
+  .label { @apply mb-1 block text-xs font-medium text-ink-muted; }
+  .table-wrap { @apply overflow-x-auto; }
+  .table { @apply w-full border-collapse text-left text-sm; }
+  .table th { @apply whitespace-nowrap border-b border-surface-line bg-surface-sunken px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-ink-muted; }
+  .table td { @apply border-b border-surface-line px-4 py-3 align-middle; }
+  .table tbody tr:last-child td { @apply border-b-0; }
+  .table tbody tr:hover td { @apply bg-surface-sunken/60; }
+  .link { @apply font-medium text-accent hover:underline; }
+  .table .link.num { @apply whitespace-nowrap; }
+}
