@@ -12,13 +12,14 @@ import { PaymentProvider, ProviderPaymentView } from '../provider/provider';
 const GRACE_MS = 5 * 60_000;
 const STUCK_MS = 30 * 60_000;
 const OPEN_HOLD: PaymentStatus[] = ['CREATED', 'COMPLIANCE_REVIEW', 'APPROVED'];
-type Step = 'HOLD' | 'RELEASE' | 'CAPTURE' | 'SETTLE' | 'REVERSE';
+type Step = 'HOLD' | 'RELEASE' | 'CAPTURE' | 'SETTLE' | 'REVERSE' | 'RETURN';
 const STEP_OF: Record<string, Step | undefined> = {
   PAYMENT_HOLD: 'HOLD',
   PAYMENT_HOLD_RELEASE: 'RELEASE',
   PAYMENT_CAPTURE: 'CAPTURE',
   PAYOUT_SETTLEMENT: 'SETTLE',
   PAYMENT_REVERSAL: 'REVERSE',
+  PAYOUT_RETURN: 'RETURN',
 };
 /** docs/RECONCILIATION.md §3.1 */
 const EXPECTED: Record<PaymentStatus, Step[]> = {
@@ -29,12 +30,14 @@ const EXPECTED: Record<PaymentStatus, Step[]> = {
   PAID: ['HOLD', 'CAPTURE', 'SETTLE'],
   FAILED: ['HOLD', 'CAPTURE', 'REVERSE'],
   CANCELLED: ['HOLD', 'RELEASE'],
+  RETURNED: ['HOLD', 'CAPTURE', 'SETTLE', 'RETURN', 'REVERSE'],
 };
 /** docs/RECONCILIATION.md §3.3 */
 const PROVIDER_OK: Partial<Record<PaymentStatus, string[]>> = {
   PROCESSING: ['CREATED', 'COMPLIANCE_REVIEW', 'PROCESSING'],
   PAID: ['PAID'],
   FAILED: ['FAILED'],
+  RETURNED: ['RETURNED'],
 };
 const SEVERITY: Record<string, ReconciliationStatus> = {
   DUPLICATE_PROVIDER_PAYMENT: 'DUPLICATE',
@@ -198,7 +201,7 @@ export class ReconciliationService implements OnModuleInit {
       if (steps.has('CAPTURE') && !sum('CAPTURE', 'CREDIT', 'INR').eq(p.destinationAmount.toString())) codes.push('LEDGER_AMOUNT_MISMATCH');
 
       // ── Provider ──
-      const submitted = p.status === 'PROCESSING' || p.status === 'PAID' || p.status === 'FAILED';
+      const submitted = p.status === 'PROCESSING' || p.status === 'PAID' || p.status === 'FAILED' || p.status === 'RETURNED';
       if (provider.length > 1) codes.push('DUPLICATE_PROVIDER_PAYMENT');
       if (submitted && provider.length === 0) {
         if (p.status !== 'PROCESSING' || age > GRACE_MS) codes.push('PROVIDER_PAYMENT_MISSING');

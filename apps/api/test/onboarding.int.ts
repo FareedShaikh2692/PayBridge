@@ -100,6 +100,23 @@ describe('onboarding: company, KYB, beneficiaries and quotes', () => {
       expect((await t.http.post('/api/v1/kyb/submit').set(auth(u.token)).expect(200)).body.data).toMatchObject({ status: 'UNDER_REVIEW', riskLevel: 'LOW', rejectionReason: null });
     });
 
+    it('records document metadata while the profile is open, and never a file', async () => {
+      const u = await newUser();
+      const c = (await t.http.post('/api/v1/companies').set(auth(u.token)).send(company()).expect(201)).body.data;
+      const doc = { documentType: 'TRADE_LICENSE', fileName: 'trade-licence.pdf', checksum: 'a'.repeat(64), sizeBytes: 48211 };
+      const created = (await t.http.post('/api/v1/kyb/documents').set(auth(u.token)).send(doc).expect(201)).body.data;
+      expect(created).toMatchObject({ documentType: 'TRADE_LICENSE', fileName: 'trade-licence.pdf', sizeBytes: 48211 });
+      await t.http.post('/api/v1/kyb/documents').set(auth(u.token)).send({ ...doc, documentType: 'PASSPORT_SCAN' }).expect(400);
+      await t.http.post('/api/v1/kyb/documents').set(auth(u.token)).send({ ...doc, fileName: '../../etc/passwd' }).expect(400);
+      await t.http.post('/api/v1/kyb/documents').set(auth(u.token)).send({ ...doc, checksum: 'not-a-hash' }).expect(400);
+      await t.http.post('/api/v1/kyb/documents').set(auth(u.token)).send({ ...doc, content: 'JVBERi0xLjQK' }).expect(400); // no file bodies
+      expect((await t.http.get(`/api/v1/kyb/${c.id}`).set(auth(u.token)).expect(200)).body.data.documents).toHaveLength(1);
+
+      await t.http.post('/api/v1/kyb/submit').set(auth(u.token)).expect(200);
+      expect((await t.http.post('/api/v1/kyb/documents').set(auth(u.token)).send(doc).expect(409)).body.error.code).toBe('INVALID_STATE_TRANSITION');
+      expect((await t.http.get('/api/v1/audit-logs?action=KYB_DOCUMENT_ADDED').set(auth(u.token)).expect(200)).body.data).toHaveLength(1);
+    });
+
     it('expires when the trade licence lapses, which blocks new quotes', async () => {
       const tenant = await createTenant(t, platform.token);
       await t.prisma.company.update({ where: { id: tenant.companyId }, data: { tradeLicenseExpiry: new Date(Date.now() + 5 * 86_400_000) } });

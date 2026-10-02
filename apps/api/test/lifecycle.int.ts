@@ -160,6 +160,91 @@ describe('payment lifecycle (API-level demo scenario)', () => {
     expect(await t.prisma.webhookEvent.findUniqueOrThrow({ where: { eventId } })).toMatchObject({ status: 'FAILED', error: 'PAYMENT_NOT_FOUND' });
   });
 
+  it('refund simulation: a returned payout moves PAID → RETURNED and refunds the wallet without touching history', async () => {
+    const before = await balance(t, acme);
+    const payment = await createPayment(t, acme);
+    await t.http.post(`/api/v1/payments/${payment.id}/approve`).set(auth(acme.approver)).send({}).expect(200);
+    await t.outbox.drainAll();
+    expect((await getPayment(t, acme.admin, payment.id)).status).toBe('PAID');
+    const entriesBefore = await t.prisma.ledgerEntry.findMany({ where: { transaction: { paymentId: payment.id } }, orderBy: { id: 'asc' } });
+
+    // Only the platform can trigger the sandbox return, and only for a paid payment.
+    await t.http.post(`/api/v1/sandbox/provider/payments/${payment.id}/return`).set(auth(acme.admin)).send({}).expect(403);
+    await t.http.post(`/api/v1/sandbox/provider/payments/${payment.id}/return`).set(auth(platform.token)).send({ reason: 'ACCOUNT_CLOSED' }).expect(202);
+    await t.outbox.drainAll();
+
+    const returned = await getPayment(t, acme.admin, payment.id);
+    expect(returned).toMatchObject({ status: 'RETURNED', failureReason: 'ACCOUNT_CLOSED' });
+    expect(returned.timeline.map((h: any) => h.toStatus)).toEqual(['CREATED', 'APPROVED', 'PROCESSING', 'PAID', 'RETURNED']);
+    expect(returned.ledgerTransactions.map((x: any) => x.type)).toEqual(['PAYMENT_HOLD', 'PAYMENT_CAPTURE', 'PAYOUT_SETTLEMENT', 'PAYOUT_RETURN', 'PAYMENT_REVERSAL']);
+    expect(returned.ledgerTransactions[4].reversesTransactionId).toBe(returned.ledgerTransactions[1].id);
+    expect(await balance(t, acme)).toMatchObject({ available: before.available, reserved: '0.00' }); // refunded in full, fee included
+    // The original entries are exactly as they were: corrections are new postings.
+    const entriesAfter = await t.prisma.ledgerEntry.findMany({ where: { id: { in: entriesBefore.map((e) => e.id) } }, orderBy: { id: 'asc' } });
+    expect(entriesAfter).toEqual(entriesBefore);
+
+    // A second return, or a late "failed", changes nothing.
+    await t.http.post(`/api/v1/sandbox/provider/payments/${payment.id}/return`).set(auth(platform.token)).send({}).expect(409);
+    const event = await t.prisma.webhookEvent.findFirstOrThrow({ where: { paymentId: payment.id, eventType: 'payment.returned' } });
+    await signedWebhook(t, { ...(event.payload as any), event_id: `evt_${randomUUID().replace(/-/g, '')}` }).expect(200);
+    await t.outbox.drainAll();
+    expect(await t.prisma.ledgerTransaction.count({ where: { paymentId: payment.id } })).toBe(5);
+
+    const run = await t.app.get(ReconciliationService).runNow(platform.userId);
+    const report = (await t.http.get(`/api/v1/reports/reconciliation?runId=${run.id}&paymentId=${payment.id}`).set(auth(platform.token)).expect(200)).body.data;
+    expect(report.items[0]).toMatchObject({ status: 'MATCHED', reasonCodes: [] });
+    await expectLedgerSound(t);
+  });
+
+  describe('RunComplianceChecks: re-screening', () => {
+    it('tightens CLEAR to REVIEW when a rule now fires, and records every evaluation', async () => {
+      const payment = await createPayment(t, acme, { amount: '20000.00' });
+      expect(payment).toMatchObject({ status: 'CREATED', complianceStatus: 'CLEAR' });
+      const rules = (await t.http.get('/api/v1/admin/compliance/rules').set(auth(platform.token)).expect(200)).body.data;
+      const threshold = rules.find((r: any) => r.code === 'AMOUNT_THRESHOLD');
+      await t.http.patch(`/api/v1/admin/compliance/rules/${threshold.id}`).set(auth(platform.token)).send({ parameters: { currency: 'AED', threshold: '15000.00' } }).expect(200);
+
+      await t.http.post(`/api/v1/admin/compliance/${payment.id}/rescreen`).set(auth(acme.admin)).send({}).expect(403);
+      await t.http.post(`/api/v1/admin/compliance/${payment.id}/rescreen`).set(auth(platform.token)).send({}).expect(202);
+      await t.outbox.drainAll();
+      await t.http.patch(`/api/v1/admin/compliance/rules/${threshold.id}`).set(auth(platform.token)).send({ parameters: { currency: 'AED', threshold: '50000.00' } }).expect(200);
+
+      const after = await getPayment(t, platform.token, payment.id);
+      expect(after).toMatchObject({ status: 'COMPLIANCE_REVIEW', complianceStatus: 'REVIEW' });
+      const rescreened = after.complianceChecks.filter((c: any) => c.details?.rescreen);
+      expect(rescreened).toHaveLength(5);
+      expect(rescreened.find((c: any) => c.ruleCode === 'AMOUNT_THRESHOLD')).toMatchObject({ triggered: true, outcome: 'REVIEW' });
+      // The velocity rule did not count the payment against itself.
+      expect(rescreened.find((c: any) => c.ruleCode === 'VELOCITY_24H').triggered).toBe(false);
+      expect((await balance(t, acme)).reserved).not.toBe('0.00'); // the hold stays while under review
+      await t.http.post(`/api/v1/payments/${payment.id}/cancel`).set(auth(acme.maker)).send({}).expect(200);
+    });
+
+    it('never clears a payment that is under review, cancels on REJECT, and refuses once processing has begun', async () => {
+      const held = await createPayment(t, acme, { amount: '60000.00' });
+      const rules = (await t.http.get('/api/v1/admin/compliance/rules').set(auth(platform.token)).expect(200)).body.data;
+      const threshold = rules.find((r: any) => r.code === 'AMOUNT_THRESHOLD');
+      await t.http.patch(`/api/v1/admin/compliance/rules/${threshold.id}`).set(auth(platform.token)).send({ enabled: false }).expect(200);
+      await t.http.post(`/api/v1/admin/compliance/${held.id}/rescreen`).set(auth(platform.token)).send({}).expect(202);
+      await t.outbox.drainAll();
+      await t.http.patch(`/api/v1/admin/compliance/rules/${threshold.id}`).set(auth(platform.token)).send({ enabled: true }).expect(200);
+      expect(await getPayment(t, platform.token, held.id)).toMatchObject({ status: 'COMPLIANCE_REVIEW', complianceStatus: 'REVIEW' }); // still a human decision
+
+      // The beneficiary is now on the (mock) sanctions list: the re-screen rejects and releases the hold.
+      await t.prisma.beneficiary.update({ where: { id: held.beneficiaryId }, data: { name: 'TEST-SANCTION Late Listing' } });
+      const reservedBefore = (await balance(t, acme)).reserved;
+      await t.http.post(`/api/v1/admin/compliance/${held.id}/rescreen`).set(auth(platform.token)).send({}).expect(202);
+      await t.outbox.drainAll();
+      expect(await getPayment(t, platform.token, held.id)).toMatchObject({ status: 'CANCELLED', cancellationReason: 'COMPLIANCE_REJECTED', complianceStatus: 'REJECT' });
+      expect(Number((await balance(t, acme)).reserved)).toBe(Number(reservedBefore) - 60025);
+
+      const paid = await createPayment(t, acme);
+      await t.http.post(`/api/v1/payments/${paid.id}/approve`).set(auth(acme.approver)).send({}).expect(200);
+      await t.outbox.drainAll();
+      expect((await t.http.post(`/api/v1/admin/compliance/${paid.id}/rescreen`).set(auth(platform.token)).send({}).expect(409)).body.error.code).toBe('PAYMENT_ALREADY_PROCESSED');
+    });
+  });
+
   describe('compliance and maker-checker gates', () => {
     it('holds a payment above the threshold until compliance clears it AND an approver approves it', async () => {
       const payment = await createPayment(t, acme, { amount: '60000.00' });

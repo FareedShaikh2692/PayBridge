@@ -106,6 +106,11 @@ export const postings = {
     { account: 'INR_PAYOUT_PAYABLE', direction: 'DEBIT', amount: f(p.destinationAmount), currency: 'INR' },
     { account: 'NOSTRO_INR', direction: 'CREDIT', amount: f(p.destinationAmount), currency: 'INR' },
   ],
+  /** The provider returned a payout that had been paid: the INR comes back and is owed again (LEDGER.md §5.7). */
+  payoutReturn: (p: PaymentAmounts): TemplateEntry[] => [
+    { account: 'NOSTRO_INR', direction: 'DEBIT', amount: f(p.destinationAmount), currency: 'INR' },
+    { account: 'INR_PAYOUT_PAYABLE', direction: 'CREDIT', amount: f(p.destinationAmount), currency: 'INR' },
+  ],
   /** Mirror of capture, refunded straight to the wallet (fee included). */
   reversal: (p: PaymentAmounts): TemplateEntry[] => {
     const total = dec(p.sourceAmount).plus(dec(p.feeAmount));
@@ -132,4 +137,6 @@ export const postingKey = {
   capture: (paymentId: string) => `payment:${paymentId}:capture`,
   settle: (paymentId: string) => `payment:${paymentId}:settle`,
   reverse: (paymentId: string) => `payment:${paymentId}:reverse`,
+  payoutReturn: (paymentId: string) => `payment:${paymentId}:return`,
+  refund: (paymentId: string) => `payment:${paymentId}:refund`,
 };

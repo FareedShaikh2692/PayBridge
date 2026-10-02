@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { Actor } from '../../common/actor';
 import { CurrentActor, Permissions } from '../../common/decorators';
 import { KybService } from './kyb.service';
@@ -11,6 +12,15 @@ class ApproveKybDto {
 }
 class RejectKybDto {
   @ApiProperty() @IsString() @MinLength(3) @MaxLength(1000) reason: string;
+}
+
+export const KYB_DOCUMENT_TYPES = ['TRADE_LICENSE', 'MEMORANDUM_OF_ASSOCIATION', 'OWNER_ID', 'PROOF_OF_ADDRESS', 'OTHER'] as const;
+
+class AddKybDocumentDto {
+  @ApiProperty({ enum: KYB_DOCUMENT_TYPES }) @IsIn(KYB_DOCUMENT_TYPES as unknown as string[]) documentType: string;
+  @ApiProperty({ example: 'trade-licence.pdf' }) @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value)) @IsString() @MinLength(1) @MaxLength(200) @Matches(/^[^\\/\u0000-\u001f]+$/, { message: 'fileName must be a plain file name.' }) fileName: string;
+  @ApiPropertyOptional({ description: 'SHA-256 of the file, hex' }) @IsOptional() @Matches(/^[0-9a-f]{64}$/) checksum?: string;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(50_000_000) sizeBytes?: number;
 }
 
 @ApiTags('KYB')
@@ -24,6 +34,13 @@ export class KybController {
   @Permissions('kyb.submit')
   submit(@CurrentActor() actor: Actor) {
     return this.kyb.submit(actor);
+  }
+
+  /** Metadata only: no file is uploaded or stored. */
+  @Post('documents')
+  @Permissions('kyb.submit')
+  addDocument(@CurrentActor() actor: Actor, @Body() dto: AddKybDocumentDto) {
+    return this.kyb.addDocument(actor, dto);
   }
 
   @Get(':companyId')

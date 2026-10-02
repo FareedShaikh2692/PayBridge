@@ -28,7 +28,7 @@ import { OutboxService } from './modules/outbox/outbox.service';
 import { PaymentsController } from './modules/payments/payments.controller';
 import { PaymentsRepository } from './modules/payments/payments.repository';
 import { PaymentsService } from './modules/payments/payments.service';
-import { MockPaymentProvider, PaymentProvider, ProviderSubmissionService } from './modules/provider/provider';
+import { MockPaymentProvider, PaymentProvider, ProviderSubmissionService, SandboxProviderController } from './modules/provider/provider';
 import { ReconciliationController } from './modules/reconciliation/reconciliation.controller';
 import { ReconciliationService } from './modules/reconciliation/reconciliation.service';
 import { SandboxController } from './modules/sandbox/sandbox.controller';
@@ -63,7 +63,7 @@ export class PaymentsModule {}
 @Module({ imports: [PaymentsModule, ComplianceEngineModule], providers: [ComplianceService], controllers: [ComplianceController] })
 export class ComplianceModule {}
 
-@Module({ providers: [{ provide: PaymentProvider, useClass: MockPaymentProvider }, ProviderSubmissionService], exports: [PaymentProvider] })
+@Module({ providers: [{ provide: PaymentProvider, useClass: MockPaymentProvider }, ProviderSubmissionService], controllers: [SandboxProviderController], exports: [PaymentProvider] })
 export class ProviderModule {}
 
 @Module({ imports: [PaymentsModule], providers: [WebhooksService], controllers: [WebhooksController] })

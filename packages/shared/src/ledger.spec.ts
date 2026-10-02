@@ -12,6 +12,15 @@ describe('posting templates', () => {
     const entries = (postings as any)[name](amounts);
     expect(checkBalanced(entries).problems).toEqual([]);
   });
+  it('a payout return followed by the reversal undoes settlement and capture exactly', () => {
+    const net: Record<string, number> = {};
+    for (const e of [...postings.capture(amounts), ...postings.settlement(amounts), ...postings.payoutReturn(amounts), ...postings.reversal(amounts)]) {
+      if (e.account === 'CUSTOMER_HOLD_AED' || e.account === 'CUSTOMER_WALLET_AED') continue;
+      const minor = Number(BigInt(e.amount.replace('.', '')));
+      net[e.account] = (net[e.account] ?? 0) + (e.direction === 'DEBIT' ? minor : -minor);
+    }
+    expect(Object.values(net).every((v) => v === 0)).toBe(true);
+  });
   it('top-up and nostro funding balance', () => {
     expect(checkBalanced(postings.walletTopup('100000')).balanced).toBe(true);
     expect(checkBalanced(postings.nostroFunding('5000000')).balanced).toBe(true);

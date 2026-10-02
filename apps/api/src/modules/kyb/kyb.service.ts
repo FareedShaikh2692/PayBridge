@@ -62,9 +62,26 @@ export class KybService {
     });
   }
 
+  /**
+   * Records KYB document metadata. The sandbox stores no files: only the type, name, size and a SHA-256
+   * checksum computed in the browser. Documents can be added only while the profile is open for editing.
+   */
+  async addDocument(actor: Actor, dto: { documentType: string; fileName: string; checksum?: string; sizeBytes?: number }) {
+    const companyId = requireCompany(actor);
+    return this.prisma.transaction(async (tx) => {
+      const profile = await tx.kybProfile.findUniqueOrThrow({ where: { companyId } });
+      if (!['DRAFT', 'REJECTED', 'EXPIRED'].includes(profile.status)) {
+        throw new DomainError('INVALID_STATE_TRANSITION', `Documents cannot be added while KYB is ${profile.status}.`);
+      }
+      const document = await tx.kybDocument.create({ data: { kybProfileId: profile.id, documentType: dto.documentType, fileName: dto.fileName, checksum: dto.checksum, sizeBytes: dto.sizeBytes, uploadedById: actor.userId } });
+      await this.audit.record(tx, { action: 'KYB_DOCUMENT_ADDED', entityType: 'kyb_profile', entityId: profile.id, companyId, newValue: { documentType: dto.documentType, fileName: dto.fileName } });
+      return document;
+    });
+  }
+
   async get(actor: Actor, companyId: string) {
     assertCompanyAccess(actor, companyId);
-    const profile = await this.prisma.client.kybProfile.findUnique({ where: { companyId }, include: { documents: true, reviewedBy: { select: { fullName: true } } } });
+    const profile = await this.prisma.client.kybProfile.findUnique({ where: { companyId }, include: { documents: { orderBy: { createdAt: 'asc' } }, reviewedBy: { select: { fullName: true } } } });
     if (!profile) throw new DomainError('COMPANY_NOT_FOUND');
     return this.view(profile);
   }

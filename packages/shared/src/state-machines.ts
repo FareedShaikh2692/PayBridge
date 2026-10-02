@@ -1,4 +1,4 @@
-export const PAYMENT_STATUSES = ['CREATED', 'COMPLIANCE_REVIEW', 'APPROVED', 'PROCESSING', 'PAID', 'FAILED', 'CANCELLED'] as const;
+export const PAYMENT_STATUSES = ['CREATED', 'COMPLIANCE_REVIEW', 'APPROVED', 'PROCESSING', 'PAID', 'FAILED', 'CANCELLED', 'RETURNED'] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 export const KYB_STATUSES = ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'EXPIRED'] as const;
@@ -15,9 +15,11 @@ export const PAYMENT_TRANSITIONS: Transitions<PaymentStatus> = {
   COMPLIANCE_REVIEW: ['APPROVED', 'CANCELLED'],
   APPROVED: ['PROCESSING', 'CANCELLED'],
   PROCESSING: ['PAID', 'FAILED'],
-  PAID: [],
+  // Refund simulation (LEDGER.md §5.7): the provider can return a payout after it was paid.
+  PAID: ['RETURNED'],
   FAILED: [],
   CANCELLED: [],
+  RETURNED: [],
 };
 
 /** docs/ARCHITECTURE.md §6.2 */
@@ -91,6 +93,7 @@ export function paymentDisplayStatus(
     PAID: 'Paid',
     FAILED: 'Failed',
     CANCELLED: 'Cancelled',
+    RETURNED: 'Returned',
   };
   return labels[status];
 }

@@ -17,18 +17,19 @@ const LEGAL_PAYMENT = [
   'COMPLIANCE_REVIEW>APPROVED', 'COMPLIANCE_REVIEW>CANCELLED',
   'APPROVED>PROCESSING', 'APPROVED>CANCELLED',
   'PROCESSING>PAID', 'PROCESSING>FAILED',
+  'PAID>RETURNED',
 ];
 
 describe('payment state machine', () => {
-  it('accepts exactly the documented transitions (exhaustive 7×7)', () => {
+  it('accepts exactly the documented transitions (exhaustive 8×8)', () => {
     for (const from of PAYMENT_STATUSES) {
       for (const to of PAYMENT_STATUSES) {
         expect([`${from}>${to}`, paymentMachine.can(from, to)]).toEqual([`${from}>${to}`, LEGAL_PAYMENT.includes(`${from}>${to}`)]);
       }
     }
   });
-  it('treats PAID, FAILED and CANCELLED as terminal', () => {
-    expect(PAYMENT_STATUSES.filter((s) => paymentMachine.isTerminal(s))).toEqual(['PAID', 'FAILED', 'CANCELLED']);
+  it('treats FAILED, CANCELLED and RETURNED as terminal; PAID can still be returned', () => {
+    expect(PAYMENT_STATUSES.filter((s) => paymentMachine.isTerminal(s))).toEqual(['FAILED', 'CANCELLED', 'RETURNED']);
   });
   it('throws a typed error on an illegal transition', () => {
     expect(() => paymentMachine.assert('PROCESSING', 'CANCELLED')).toThrow(InvalidTransitionError);

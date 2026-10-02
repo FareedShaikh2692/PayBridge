@@ -27,6 +27,7 @@ const AUDIT_ACTION: Partial<Record<PaymentStatus, string>> = {
   PAID: 'PAYMENT_PAID',
   FAILED: 'PAYMENT_FAILED',
   CANCELLED: 'PAYMENT_CANCELLED',
+  RETURNED: 'PAYMENT_RETURNED',
 };
 
 export function ledgerAmounts(p: Pick<PaymentOrder, 'sourceAmount' | 'feeAmount' | 'fxMarginAmount' | 'destinationAmount'>) {
@@ -49,6 +50,8 @@ export class PaymentsService implements OnModuleInit {
   onModuleInit(): void {
     // ProcessPayment job
     this.outbox.register('payment.approved', (payload) => this.processApproved(payload.paymentId));
+    // RunComplianceChecks job
+    this.outbox.register('compliance.rescreen', (payload) => this.rescreen(payload.paymentId));
   }
 
   // ───────────────────────── State machine ─────────────────────────
@@ -377,6 +380,92 @@ export class PaymentsService implements OnModuleInit {
       companyId: payment.companyId,
       paymentId: payment.id,
       reversesTransactionId: capture?.id ?? null,
+    });
+  }
+
+  /**
+   * Refund simulation (LEDGER.md §5.7): the provider returned a payout after it was paid. PAID → RETURNED;
+   * the INR comes back to the nostro and the capture is reversed, refunding the wallet in full.
+   * The original postings are never touched.
+   */
+  async applyReturned(tx: Tx, payment: PaymentOrder, reason: string, metadata: Record<string, unknown>): Promise<void> {
+    const returned = await this.transition(tx, payment, 'RETURNED', { type: 'PROVIDER' }, { reason, data: { failureReason: reason }, metadata });
+    const capture = await tx.ledgerTransaction.findUnique({ where: { postingKey: postingKey.capture(payment.id) } });
+    await this.ledger.post(tx, {
+      postingKey: postingKey.payoutReturn(payment.id),
+      type: 'PAYOUT_RETURN',
+      description: `Payout returned by provider for payment ${payment.reference}`,
+      entries: postings.payoutReturn(ledgerAmounts(returned)),
+      companyId: payment.companyId,
+      paymentId: payment.id,
+    });
+    await this.ledger.post(tx, {
+      postingKey: postingKey.refund(payment.id),
+      type: 'PAYMENT_REVERSAL',
+      description: `Refund for returned payment ${payment.reference}`,
+      entries: postings.reversal(ledgerAmounts(returned)),
+      companyId: payment.companyId,
+      paymentId: payment.id,
+      reversesTransactionId: capture?.id ?? null,
+    });
+  }
+
+  // ───────────────────────── Re-screening ─────────────────────────
+
+  /** Queues the RunComplianceChecks job for a payment that has not started processing. */
+  async requestRescreen(actor: Actor, id: string) {
+    await this.prisma.transaction(async (tx) => {
+      const payment = await this.repo.lock(tx, id, actor);
+      if (!AWAITING_GATES.includes(payment.status)) throw new DomainError('PAYMENT_ALREADY_PROCESSED');
+      await this.outbox.enqueue(tx, { eventType: 'compliance.rescreen', aggregateType: 'payment', aggregateId: id, payload: { paymentId: id } });
+      await this.audit.record(tx, { action: 'COMPLIANCE_RESCREEN_REQUESTED', entityType: 'payment', entityId: id, companyId: payment.companyId });
+    });
+    return { queued: true };
+  }
+
+  /**
+   * RunComplianceChecks job. Evaluates the current rules again and records every result. A re-screen can only
+   * tighten: CLEAR may become REVIEW, and anything may become REJECT. It never clears a payment that is under
+   * review — that remains a human decision.
+   */
+  async rescreen(paymentId: string): Promise<void> {
+    await this.prisma.transaction(async (tx) => {
+      const payment = await this.repo.lock(tx, paymentId);
+      if (!AWAITING_GATES.includes(payment.status)) return; // already moving or finished: nothing to re-screen
+      const [company, beneficiary] = await Promise.all([
+        tx.company.findUniqueOrThrow({ where: { id: payment.companyId } }),
+        tx.beneficiary.findUniqueOrThrow({ where: { id: payment.beneficiaryId } }),
+      ]);
+      const verdict = await this.compliance.evaluate(tx, {
+        companyId: payment.companyId,
+        companyName: company.name,
+        beneficiary: { name: beneficiary.name, accountHolderName: beneficiary.accountHolderName, country: beneficiary.country },
+        sourceAmount: payment.sourceAmount.toString(),
+        sourceCurrency: payment.sourceCurrency,
+        excludePaymentId: payment.id,
+      });
+      await tx.complianceCheck.createMany({
+        data: verdict.evaluations.map((e) => ({
+          companyId: payment.companyId,
+          paymentId: payment.id,
+          ruleId: e.ruleId,
+          ruleCode: e.ruleCode,
+          ruleVersion: e.ruleVersion,
+          triggered: e.triggered,
+          outcome: e.outcome,
+          details: { ...e.details, rescreen: true } as Prisma.InputJsonValue,
+        })),
+      });
+      const fired = verdict.evaluations.filter((e) => e.triggered).map((e) => e.ruleCode);
+      await this.audit.record(tx, { action: 'COMPLIANCE_RESCREENED', entityType: 'payment', entityId: payment.id, companyId: payment.companyId, userId: null, newValue: { result: verdict.result, rulesFired: fired } });
+
+      if (verdict.result === 'REJECT') {
+        const updated = await tx.paymentOrder.update({ where: { id: payment.id }, data: { complianceStatus: 'REJECT' } });
+        await this.cancelInTransaction(tx, updated, 'COMPLIANCE_REJECTED', { type: 'SYSTEM' }, `Re-screen rejected: ${fired.join(', ')}`);
+      } else if (verdict.result === 'REVIEW' && payment.status === 'CREATED') {
+        const updated = await tx.paymentOrder.update({ where: { id: payment.id }, data: { complianceStatus: 'REVIEW' } });
+        await this.transition(tx, updated, 'COMPLIANCE_REVIEW', { type: 'SYSTEM' }, { reason: `Re-screen: rules fired: ${fired.join(', ')}` });
+      }
     });
   }
 

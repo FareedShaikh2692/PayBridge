@@ -1,13 +1,22 @@
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Body, Controller, HttpCode, Inject, Injectable, OnModuleInit, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { ApiBearerAuth, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
+import { IsOptional, IsString, Matches } from 'class-validator';
 import { ProviderPayment, ProviderPaymentStatus } from '@paybridge/database';
 import { money } from '@paybridge/shared';
 import { randomBytes } from 'node:crypto';
 import { decryptField, signWebhook } from '../../common/crypto';
 import { logger } from '../../common/logger';
 import { PrismaService } from '../../common/prisma.service';
+import { Permissions } from '../../common/decorators';
+import { DomainError } from '../../common/errors';
 import { AppConfig, CONFIG } from '../../config';
+import { AuditService } from '../audit/audit.service';
 import { ProviderTimeoutError } from '../compliance/sanctions.provider';
 import { OutboxService } from '../outbox/outbox.service';
+
+class ReturnDto {
+  @ApiPropertyOptional({ example: 'ACCOUNT_CLOSED' }) @IsOptional() @IsString() @Matches(/^[A-Z0-9_]{3,60}$/) reason?: string;
+}
 
 // ───────────────────────── Port ─────────────────────────
 
@@ -40,7 +49,7 @@ export abstract class PaymentProvider {
 // ───────────────────────── Mock adapter ─────────────────────────
 
 type Scenario = 'SUCCESS' | 'FAIL' | 'TIMEOUT' | 'DUPLICATE_WEBHOOK' | 'OUT_OF_ORDER';
-type EventType = 'payment.created' | 'payment.processing' | 'payment.paid' | 'payment.failed';
+type EventType = 'payment.created' | 'payment.processing' | 'payment.paid' | 'payment.failed' | 'payment.returned';
 
 function scenarioFor(name: string): Scenario {
   const n = name.toUpperCase();
@@ -56,6 +65,7 @@ const EVENT_STATUS: Record<EventType, ProviderPaymentStatus> = {
   'payment.processing': 'PROCESSING',
   'payment.paid': 'PAID',
   'payment.failed': 'FAILED',
+  'payment.returned': 'RETURNED',
 };
 
 /**
@@ -141,10 +151,26 @@ export class MockPaymentProvider extends PaymentProvider implements OnModuleInit
     return rows.map((r) => this.view(r));
   }
 
+  /**
+   * Sandbox control: the provider "returns" a payout it had paid (for example, the beneficiary's bank bounced it).
+   * Like everything else the provider does, the platform learns of it only through a webhook.
+   */
+  async simulateReturn(providerPaymentId: string, reason: string): Promise<void> {
+    const row = await this.prisma.client.providerPayment.findUnique({ where: { providerPaymentId } });
+    if (!row || row.status !== 'PAID' || !row.paymentId) throw new Error('Only a paid provider payment can be returned.');
+    await this.outbox.enqueue(this.prisma.client, {
+      eventType: 'mockprovider.webhook.deliver',
+      aggregateType: 'provider_payment',
+      aggregateId: providerPaymentId,
+      payload: { eventId: `evt_${randomBytes(10).toString('hex')}`, eventType: 'payment.returned', providerPaymentId, paymentId: row.paymentId, sequence: 99, amount: money(row.amount, 'INR'), currency: row.currency.trim(), failureReason: reason },
+    });
+  }
+
   /** Provider-side step: advance the provider's own record, then notify the platform with a signed webhook. */
   private async deliver(p: { eventId: string; eventType: EventType; providerPaymentId: string; paymentId: string; sequence: number; amount: string; currency: string; failureReason: string | null }): Promise<void> {
     const current = await this.prisma.client.providerPayment.findUnique({ where: { providerPaymentId: p.providerPaymentId } });
-    if (current && current.status !== 'PAID' && current.status !== 'FAILED') {
+    const advance = current && (p.eventType === 'payment.returned' ? current.status === 'PAID' : current.status !== 'PAID' && current.status !== 'FAILED' && current.status !== 'RETURNED');
+    if (advance) {
       await this.prisma.client.providerPayment.update({ where: { providerPaymentId: p.providerPaymentId }, data: { status: EVENT_STATUS[p.eventType], failureReason: p.failureReason } });
     }
     const body = JSON.stringify({
@@ -172,6 +198,31 @@ export class MockPaymentProvider extends PaymentProvider implements OnModuleInit
 
   private view(r: ProviderPayment): ProviderPaymentView {
     return { providerPaymentId: r.providerPaymentId, paymentId: r.paymentId, status: r.status, amount: money(r.amount, 'INR'), currency: r.currency.trim(), failureReason: r.failureReason, createdAt: r.createdAt, updatedAt: r.updatedAt };
+  }
+}
+
+/** Sandbox-only controls for the mock provider. */
+@ApiTags('Sandbox')
+@ApiBearerAuth()
+@Controller('sandbox/provider')
+export class SandboxProviderController {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly provider: PaymentProvider,
+    private readonly audit: AuditService,
+  ) {}
+
+  /** Makes the mock provider return a paid payout. The refund then arrives the normal way: by webhook. */
+  @Post('payments/:paymentId/return')
+  @HttpCode(202)
+  @Permissions('platform.admin')
+  async simulateReturn(@Param('paymentId', ParseUUIDPipe) paymentId: string, @Body() dto: ReturnDto) {
+    const payment = await this.prisma.client.paymentOrder.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new DomainError('PAYMENT_NOT_FOUND');
+    if (payment.status !== 'PAID' || !payment.providerPaymentId) throw new DomainError('INVALID_STATE_TRANSITION', 'Only a paid payment can be returned.');
+    await (this.provider as MockPaymentProvider).simulateReturn(payment.providerPaymentId, dto.reason ?? 'MOCK_PAYOUT_RETURNED_BY_BENEFICIARY_BANK');
+    await this.audit.record(this.prisma.client, { action: 'PROVIDER_RETURN_SIMULATED', entityType: 'payment', entityId: paymentId, companyId: payment.companyId, newValue: { reason: dto.reason ?? null } });
+    return { queued: true };
   }
 }
 

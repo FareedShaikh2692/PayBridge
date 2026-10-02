@@ -60,6 +60,8 @@ describe('I8: tenant isolation', () => {
     ['POST', '/admin/compliance/:id/decision', () => `/admin/compliance/${ids.payment}/decision`, { decision: 'CLEAR', reason: 'self-service' }],
     ['PATCH', '/admin/compliance/rules/:id', () => `/admin/compliance/rules/${randomUUID()}`, { enabled: false }],
     ['POST', '/admin/jobs/:id/retry', () => `/admin/jobs/${randomUUID()}/retry`, {}],
+    ['POST', '/admin/compliance/:id/rescreen', () => `/admin/compliance/${ids.payment}/rescreen`, {}],
+    ['POST', '/sandbox/provider/payments/:paymentId/return', () => `/sandbox/provider/payments/${ids.payment}/return`, {}],
   ];
 
   const call = (method: string, path: string, token: string, body?: object) => {

@@ -191,6 +191,14 @@ export class ComplianceController {
     return this.payments.decideCompliance(actor, id, dto.decision, dto.reason);
   }
 
+  /** Queues the RunComplianceChecks job: the rules are evaluated again against the payment as it stands. */
+  @Post('admin/compliance/:id/rescreen')
+  @HttpCode(202)
+  @Permissions('compliance.review')
+  rescreen(@CurrentActor() actor: Actor, @Param('id', ParseUUIDPipe) id: string) {
+    return this.payments.requestRescreen(actor, id);
+  }
+
   @Get('admin/compliance/rules')
   @Permissions('compliance.review')
   rules() {

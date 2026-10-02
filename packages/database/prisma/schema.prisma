@@ -74,6 +74,7 @@ enum PaymentStatus {
   PAID
   FAILED
   CANCELLED
+  RETURNED
 }
 
 enum PaymentComplianceStatus {
@@ -154,6 +155,7 @@ enum ProviderPaymentStatus {
   PROCESSING
   PAID
   FAILED
+  RETURNED
 }
 
 enum WebhookEventStatus {
@@ -351,7 +353,9 @@ model KybDocument {
   kybProfileId String   @map("kyb_profile_id") @db.Uuid
   documentType String   @map("document_type")
   fileName     String   @map("file_name")
-  checksum     String?
+  checksum     String? // SHA-256 of the file, computed in the browser; the file itself is never uploaded
+  sizeBytes    Int?     @map("size_bytes")
+  uploadedById String?  @map("uploaded_by") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   kybProfile KybProfile @relation(fields: [kybProfileId], references: [id])

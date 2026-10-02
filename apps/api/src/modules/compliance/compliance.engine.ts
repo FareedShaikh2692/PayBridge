@@ -12,6 +12,8 @@ export interface ComplianceContext {
   beneficiary: { name: string; accountHolderName: string; country: string };
   sourceAmount: string;
   sourceCurrency: string;
+  /** When re-screening an existing payment, leave it out of its own velocity count. */
+  excludePaymentId?: string;
 }
 
 export interface RuleEvaluation {
@@ -94,7 +96,7 @@ export class ComplianceEngine {
       }
       case 'VELOCITY': {
         const since = new Date(this.clock.now().getTime() - Number(p.windowHours) * 3_600_000);
-        const count = await db.paymentOrder.count({ where: { companyId: c.companyId, createdAt: { gte: since }, status: { not: 'CANCELLED' } } });
+        const count = await db.paymentOrder.count({ where: { companyId: c.companyId, createdAt: { gte: since }, status: { not: 'CANCELLED' }, ...(c.excludePaymentId ? { id: { not: c.excludePaymentId } } : {}) } });
         // "More than maxCount payments in the window": this payment would be number count + 1.
         return { triggered: count >= Number(p.maxCount), details: { paymentsInWindow: count, maxCount: p.maxCount, windowHours: p.windowHours } };
       }

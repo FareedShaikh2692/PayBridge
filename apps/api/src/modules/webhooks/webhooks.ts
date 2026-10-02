@@ -17,7 +17,7 @@ import { OutboxService } from '../outbox/outbox.service';
 import { PaymentsRepository } from '../payments/payments.repository';
 import { PaymentsService } from '../payments/payments.service';
 
-const EVENT_TYPES = ['payment.created', 'payment.compliance_review', 'payment.processing', 'payment.paid', 'payment.failed'];
+const EVENT_TYPES = ['payment.created', 'payment.compliance_review', 'payment.processing', 'payment.paid', 'payment.failed', 'payment.returned'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface WebhookPayload {
@@ -140,7 +140,15 @@ export class WebhooksService implements OnModuleInit {
             await this.payments.applyFailed(tx, payment, payload.data?.failure_reason ?? 'PROVIDER_FAILED', meta);
             await finish('PROCESSED', null);
           } else {
-            if (payment.status === 'PAID') logger.error({ eventId, paymentId: payment.id }, 'conflicting webhook: failed after paid');
+            if (payment.status === 'PAID' || payment.status === 'RETURNED') logger.error({ eventId, paymentId: payment.id }, 'conflicting webhook: failed after paid');
+            await finish('IGNORED', `Not applicable: payment is ${payment.status}`);
+          }
+          return;
+        case 'payment.returned':
+          if (payment.status === 'PAID') {
+            await this.payments.applyReturned(tx, payment, payload.data?.failure_reason ?? 'PROVIDER_RETURNED', meta);
+            await finish('PROCESSED', null);
+          } else {
             await finish('IGNORED', `Not applicable: payment is ${payment.status}`);
           }
           return;
