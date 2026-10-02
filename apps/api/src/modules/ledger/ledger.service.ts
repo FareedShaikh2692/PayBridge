@@ -108,6 +108,11 @@ export class LedgerService {
       },
     });
     await tx.ledgerEntry.createMany({ data: rows.map((r) => ({ ...r, transactionId: created.id })) });
+    // Run the database's own balance check now rather than at COMMIT, so a violation surfaces here, as an
+    // ordinary statement error, at the posting that caused it. The constraint returns to deferred mode
+    // afterwards so later postings in the same transaction can insert their entries one by one.
+    await tx.$executeRaw`SET CONSTRAINTS ledger_entries_balanced IMMEDIATE`;
+    await tx.$executeRaw`SET CONSTRAINTS ledger_entries_balanced DEFERRED`;
     for (const [id, acc] of running) {
       await tx.ledgerAccount.update({ where: { id }, data: { balance: acc.balance.toFixed(2), version: { increment: 1 } } });
     }

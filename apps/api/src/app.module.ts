@@ -1,5 +1,5 @@
 import { CallHandler, ExecutionContext, Injectable, MiddlewareConsumer, Module, NestInterceptor, NestModule } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, DiscoveryModule } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { Observable, finalize } from 'rxjs';
 import { AuthGuard } from './common/auth.guard';
@@ -92,6 +92,7 @@ export class OutboxKickInterceptor implements NestInterceptor {
 @Module({
   imports: [
     CoreModule,
+    DiscoveryModule,
     ThrottlerModule.forRoot({
       throttlers: [{ name: 'default', ttl: 60_000, limit: 300 }],
       skipIf: () => process.env.RATE_LIMIT_DISABLED === 'true',
@@ -113,7 +114,7 @@ export class OutboxKickInterceptor implements NestInterceptor {
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: APP_GUARD, useClass: AuthGuard },
+    { provide: APP_GUARD, useExisting: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_INTERCEPTOR, useClass: EnvelopeInterceptor },
     { provide: APP_INTERCEPTOR, useClass: OutboxKickInterceptor },
@@ -121,6 +122,6 @@ export class OutboxKickInterceptor implements NestInterceptor {
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestContextMiddleware).forRoutes('*');
+    consumer.apply(RequestContextMiddleware).forRoutes('{*path}');
   }
 }

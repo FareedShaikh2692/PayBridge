@@ -1,5 +1,6 @@
 import './env';
 import { INestApplication } from '@nestjs/common';
+import { DiscoveryService } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { PrismaClient, bootstrapReferenceData } from '@paybridge/database';
 import { randomUUID } from 'node:crypto';
@@ -180,4 +181,24 @@ export async function setVelocityLimit(t: TestApp, adminToken: string, maxCount:
   const rules = (await t.http.get('/api/v1/admin/compliance/rules').set(auth(adminToken)).expect(200)).body.data;
   const rule = rules.find((r: any) => r.code === 'VELOCITY_24H');
   await t.http.patch(`/api/v1/admin/compliance/rules/${rule.id}`).set(auth(adminToken)).send({ parameters: { maxCount, windowHours: 24 } }).expect(200);
+}
+
+const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'ALL', 'OPTIONS', 'HEAD'];
+
+/** Every route the application exposes, read from controller metadata. */
+export function listRoutes(t: TestApp): { method: string; path: string; handler: Function; controller: Function; name: string }[] {
+  const routes = [];
+  for (const wrapper of t.app.get(DiscoveryService, { strict: false }).getControllers()) {
+    const proto = Object.getPrototypeOf(wrapper.instance);
+    const base = String(Reflect.getMetadata("path", wrapper.metatype as Function) ?? '').replace(/^\/|\/$/g, '');
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      const handler = proto[name];
+      if (name === 'constructor' || typeof handler !== 'function') continue;
+      const sub = Reflect.getMetadata('path', handler);
+      if (sub === undefined) continue;
+      const path = [base, String(sub).replace(/^\/|\/$/g, '')].filter(Boolean).join('/');
+      routes.push({ method: HTTP_METHODS[Reflect.getMetadata('method', handler)], path: `/${path}`, handler, controller: wrapper.metatype as Function, name: `${wrapper.name}.${name}` });
+    }
+  }
+  return routes;
 }

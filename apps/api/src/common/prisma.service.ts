@@ -20,6 +20,7 @@ export class PrismaService implements OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.client.$disconnect();
+    // Never let a stuck connection block shutdown.
+    await Promise.race([this.client.$disconnect(), new Promise((resolve) => setTimeout(resolve, 5000).unref())]);
   }
 }

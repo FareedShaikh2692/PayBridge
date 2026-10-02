@@ -6,7 +6,7 @@ export const REDACT_KEYS = [
   'token', 'accessToken', 'refreshToken', 'tokenHash', 'secret', 'signature',
 ];
 
-export const logger = pino({
+export const loggerOptions: pino.LoggerOptions = {
   level: process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'test' ? 'silent' : 'info'),
   base: { service: 'paybridge-api' },
   timestamp: pino.stdTimeFunctions.isoTime,
@@ -14,7 +14,9 @@ export const logger = pino({
     paths: REDACT_KEYS.flatMap((k) => [k, `*.${k}`, `*.*.${k}`, `*.*.*.${k}`]),
     censor: '[REDACTED]',
   },
-});
+};
+
+export const logger = pino(loggerOptions);
 
 /** Deep-redacts a value for storage in audit logs. */
 export function redact<T>(value: T): T {

@@ -41,9 +41,9 @@ export class CompaniesService {
       const adminRole = await tx.role.findUniqueOrThrow({ where: { name: 'COMPANY_ADMIN' } });
       const company = await tx.company.create({ data: { ...dto, tradeLicenseExpiry: expiry } });
       await tx.companyUser.create({ data: { companyId: company.id, userId: actor.userId, roleId: adminRole.id } });
-      await tx.kybProfile.create({ data: { companyId: company.id } });
+      const kybProfile = await tx.kybProfile.create({ data: { companyId: company.id } });
       await this.audit.record(tx, { action: 'COMPANY_CREATED', entityType: 'company', entityId: company.id, companyId: company.id, newValue: dto });
-      return this.view({ ...company, kybProfile: { status: 'DRAFT' } });
+      return this.view({ ...company, kybProfile });
     });
   }
 
