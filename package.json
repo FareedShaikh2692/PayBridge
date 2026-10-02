@@ -1,0 +1,33 @@
+{
+  "name": "paybridge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "PayBridge — Educational Sandbox — No Real Money Movement",
+  "packageManager": "pnpm@10.28.2",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "eslint .",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:int": "pnpm --filter @paybridge/api test:int",
+    "test:e2e": "pnpm --filter @paybridge/web test:e2e",
+    "db:generate": "pnpm --filter @paybridge/database generate",
+    "db:migrate": "pnpm --filter @paybridge/database migrate:deploy",
+    "db:migrate:dev": "pnpm --filter @paybridge/database migrate:dev",
+    "db:seed": "pnpm --filter @paybridge/api seed",
+    "db:reset": "pnpm --filter @paybridge/database migrate:reset && pnpm db:seed",
+    "db:local:start": "bash infra/scripts/local-db.sh start",
+    "db:local:stop": "bash infra/scripts/local-db.sh stop"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "~5.9.2",
+    "typescript-eslint": "^8.19.0"
+  }
+}
