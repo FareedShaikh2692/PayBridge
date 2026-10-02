@@ -1,0 +1,786 @@
+// PayBridge — Educational Sandbox — No Real Money Movement.
+//
+// Schema proposal (Phase 0). Things Prisma cannot express live in raw SQL
+// migrations and are listed in docs/DATABASE.md §5:
+//   - CHECK constraints (positive amounts, non-negative customer balances)
+//   - immutability triggers (ledger_*, audit_logs, priced fx_quotes columns)
+//   - deferred balance trigger on ledger_entries
+//   - partial unique indexes (system ledger accounts, active approval request)
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client" // Rust-free client with the pg driver adapter: no native engine binary to ship
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+}
+
+enum RoleScope {
+  PLATFORM
+  COMPANY
+}
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum KybStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum BeneficiaryStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum QuoteStatus {
+  ACTIVE
+  EXPIRED
+  USED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  CREATED
+  COMPLIANCE_REVIEW
+  APPROVED
+  PROCESSING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum PaymentComplianceStatus {
+  CLEAR
+  REVIEW
+  REJECT
+  CLEARED_BY_ADMIN
+  REJECTED_BY_ADMIN
+}
+
+enum PaymentApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CancellationReason {
+  USER_CANCELLED
+  APPROVER_REJECTED
+  COMPLIANCE_REJECTED
+  KYB_REVOKED
+}
+
+enum ComplianceRuleType {
+  AMOUNT_THRESHOLD
+  VELOCITY
+  DESTINATION_COUNTRY
+  SANCTIONS
+  PEP
+}
+
+enum ComplianceOutcome {
+  CLEAR
+  REVIEW
+  REJECT
+}
+
+enum ApprovalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalActionType {
+  APPROVE
+  REJECT
+}
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum EntryDirection {
+  DEBIT
+  CREDIT
+}
+
+enum LedgerTransactionType {
+  WALLET_TOPUP
+  NOSTRO_FUNDING
+  PAYMENT_HOLD
+  PAYMENT_HOLD_RELEASE
+  PAYMENT_CAPTURE
+  PAYOUT_SETTLEMENT
+  PAYMENT_REVERSAL
+  PAYOUT_RETURN
+}
+
+enum ProviderPaymentStatus {
+  CREATED
+  COMPLIANCE_REVIEW
+  PROCESSING
+  PAID
+  FAILED
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+enum ReconciliationRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ReconciliationStatus {
+  MATCHED
+  MISMATCH
+  MISSING
+  DUPLICATE
+  REVIEW_REQUIRED
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED // dead-lettered after exhausting retries
+}
+
+// ─────────────────────── Identity and access ───────────────────────
+
+model User {
+  id             String     @id @default(uuid(7)) @db.Uuid
+  email          String     @unique @db.Citext
+  passwordHash   String     @map("password_hash")
+  fullName       String     @map("full_name")
+  status         UserStatus @default(ACTIVE)
+  platformRoleId String?    @map("platform_role_id") @db.Uuid
+  lastLoginAt    DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  platformRole         Role?             @relation("PlatformRole", fields: [platformRoleId], references: [id])
+  memberships          CompanyUser[]
+  refreshTokens        RefreshToken[]
+  kybReviews           KybProfile[]      @relation("KybReviewer")
+  beneficiariesCreated Beneficiary[]     @relation("BeneficiaryCreator")
+  quotesCreated        FxQuote[]         @relation("QuoteCreator")
+  paymentsCreated      PaymentOrder[]    @relation("PaymentCreator")
+  complianceDecisions  ComplianceCheck[] @relation("ComplianceDecider")
+  approvalsRequested   ApprovalRequest[] @relation("ApprovalRequester")
+  approvalActions      ApprovalAction[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model Role {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  name        String    @unique
+  scope       RoleScope
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  permissions   RolePermission[]
+  companyUsers  CompanyUser[]
+  platformUsers User[]           @relation("PlatformRole")
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  key         String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model CompanyUser {
+  id        String     @id @default(uuid(7)) @db.Uuid
+  companyId String     @map("company_id") @db.Uuid
+  userId    String     @map("user_id") @db.Uuid
+  roleId    String     @map("role_id") @db.Uuid
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company Company @relation(fields: [companyId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+  role    Role    @relation(fields: [roleId], references: [id])
+
+  @@unique([companyId, userId])
+  @@index([userId])
+  @@map("company_users")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  familyId   String    @map("family_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  rotatedAt  DateTime? @map("rotated_at") @db.Timestamptz(6)
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+// ───────────────────────── Company and KYB ─────────────────────────
+
+model Company {
+  id                  String        @id @default(uuid(7)) @db.Uuid
+  name                String
+  country             String        @db.Char(2)
+  tradeLicenseNumber  String        @unique @map("trade_license_number")
+  tradeLicenseExpiry  DateTime      @map("trade_license_expiry") @db.Date
+  registrationNumber  String        @map("registration_number")
+  businessType        String        @map("business_type")
+  registeredAddress   String        @map("registered_address")
+  contactEmail        String        @map("contact_email") @db.Citext
+  contactPhone        String        @map("contact_phone")
+  website             String?
+  status              CompanyStatus @default(ACTIVE)
+  makerCheckerEnabled Boolean       @default(true) @map("maker_checker_enabled")
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  members            CompanyUser[]
+  kybProfile         KybProfile?
+  beneficiaries      Beneficiary[]
+  quotes             FxQuote[]
+  payments           PaymentOrder[]
+  ledgerAccounts     LedgerAccount[]
+  ledgerTransactions LedgerTransaction[]
+  complianceChecks   ComplianceCheck[]
+  approvalRequests   ApprovalRequest[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("companies")
+}
+
+model KybProfile {
+  id                 String     @id @default(uuid(7)) @db.Uuid
+  companyId          String     @unique @map("company_id") @db.Uuid
+  status             KybStatus  @default(DRAFT)
+  submittedAt        DateTime?  @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt         DateTime?  @map("reviewed_at") @db.Timestamptz(6)
+  reviewedById       String?    @map("reviewed_by") @db.Uuid
+  riskLevel          RiskLevel? @map("risk_level")
+  verificationResult Json?      @map("verification_result")
+  rejectionReason    String?    @map("rejection_reason")
+  expiresAt          DateTime?  @map("expires_at") @db.Timestamptz(6)
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company    Company       @relation(fields: [companyId], references: [id])
+  reviewedBy User?         @relation("KybReviewer", fields: [reviewedById], references: [id])
+  documents  KybDocument[]
+
+  @@index([status])
+  @@map("kyb_profiles")
+}
+
+model KybDocument {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  kybProfileId String   @map("kyb_profile_id") @db.Uuid
+  documentType String   @map("document_type")
+  fileName     String   @map("file_name")
+  checksum     String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  kybProfile KybProfile @relation(fields: [kybProfileId], references: [id])
+
+  @@index([kybProfileId])
+  @@map("kyb_documents")
+}
+
+// ─────────────────────────── Beneficiaries ───────────────────────────
+
+model Beneficiary {
+  id                     String            @id @default(uuid(7)) @db.Uuid
+  companyId              String            @map("company_id") @db.Uuid
+  name                   String
+  country                String            @db.Char(2)
+  bankName               String            @map("bank_name")
+  accountNumberEncrypted String            @map("account_number_encrypted") // AES-256-GCM, iv:tag:ciphertext
+  accountNumberLast4     String            @map("account_number_last4") @db.Char(4)
+  accountFingerprint     String            @map("account_fingerprint") // HMAC-SHA256(ifsc|account_number)
+  ifsc                   String            @db.Char(11)
+  accountHolderName      String            @map("account_holder_name")
+  status                 BeneficiaryStatus @default(ACTIVE)
+  screeningResult        String?           @map("screening_result")
+  createdById            String            @map("created_by") @db.Uuid
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company   Company        @relation(fields: [companyId], references: [id])
+  createdBy User           @relation("BeneficiaryCreator", fields: [createdById], references: [id])
+  payments  PaymentOrder[]
+
+  @@unique([companyId, accountFingerprint])
+  @@unique([id, companyId]) // target for tenant-safe composite FK from payment_orders
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@map("beneficiaries")
+}
+
+// ─────────────────────────────── FX ───────────────────────────────
+
+model FxQuote {
+  id               String      @id @default(uuid(7)) @db.Uuid
+  companyId        String      @map("company_id") @db.Uuid
+  baseCurrency     String      @map("base_currency") @db.Char(3)
+  quoteCurrency    String      @map("quote_currency") @db.Char(3)
+  baseAmount       Decimal     @map("base_amount") @db.Decimal(20, 4)
+  midMarketRate    Decimal     @map("mid_market_rate") @db.Decimal(20, 8)
+  spreadPercentage Decimal     @map("spread_percentage") @db.Decimal(7, 4)
+  customerRate     Decimal     @map("customer_rate") @db.Decimal(20, 8)
+  feeAmount        Decimal     @map("fee_amount") @db.Decimal(20, 4)
+  fxMarginAmount   Decimal     @map("fx_margin_amount") @db.Decimal(20, 4)
+  totalDebitAmount Decimal     @map("total_debit_amount") @db.Decimal(20, 4)
+  recipientAmount  Decimal     @map("recipient_amount") @db.Decimal(20, 4)
+  status           QuoteStatus @default(ACTIVE)
+  createdById      String      @map("created_by") @db.Uuid
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt        DateTime    @map("expires_at") @db.Timestamptz(6)
+  usedAt           DateTime?   @map("used_at") @db.Timestamptz(6)
+
+  company   Company       @relation(fields: [companyId], references: [id])
+  createdBy User          @relation("QuoteCreator", fields: [createdById], references: [id])
+  payment   PaymentOrder?
+
+  @@unique([id, companyId]) // target for tenant-safe composite FK from payment_orders
+  @@index([companyId, createdAt])
+  @@index([status, expiresAt])
+  @@map("fx_quotes")
+}
+
+// ───────────────────────────── Payments ─────────────────────────────
+
+model PaymentOrder {
+  id                  String                  @id @default(uuid(7)) @db.Uuid
+  reference           String                  @unique // human-readable, e.g. PB-20261002-000123
+  companyId           String                  @map("company_id") @db.Uuid
+  beneficiaryId       String                  @map("beneficiary_id") @db.Uuid
+  quoteId             String                  @unique @map("quote_id") @db.Uuid
+  sourceCurrency      String                  @map("source_currency") @db.Char(3)
+  sourceAmount        Decimal                 @map("source_amount") @db.Decimal(20, 4)
+  destinationCurrency String                  @map("destination_currency") @db.Char(3)
+  destinationAmount   Decimal                 @map("destination_amount") @db.Decimal(20, 4)
+  feeAmount           Decimal                 @map("fee_amount") @db.Decimal(20, 4)
+  fxMarginAmount      Decimal                 @map("fx_margin_amount") @db.Decimal(20, 4)
+  totalDebitAmount    Decimal                 @map("total_debit_amount") @db.Decimal(20, 4)
+  exchangeRate        Decimal                 @map("exchange_rate") @db.Decimal(20, 8)
+  status              PaymentStatus           @default(CREATED)
+  complianceStatus    PaymentComplianceStatus @map("compliance_status")
+  approvalStatus      PaymentApprovalStatus   @map("approval_status")
+  cancellationReason  CancellationReason?     @map("cancellation_reason")
+  failureReason       String?                 @map("failure_reason")
+  purpose             String?
+  idempotencyKey      String                  @map("idempotency_key")
+  providerPaymentId   String?                 @unique @map("provider_payment_id")
+  createdById         String                  @map("created_by") @db.Uuid
+  version             Int                     @default(0)
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  completedAt         DateTime?               @map("completed_at") @db.Timestamptz(6)
+
+  company            Company                @relation(fields: [companyId], references: [id])
+  beneficiary        Beneficiary            @relation(fields: [beneficiaryId, companyId], references: [id, companyId])
+  quote              FxQuote                @relation(fields: [quoteId, companyId], references: [id, companyId])
+  createdBy          User                   @relation("PaymentCreator", fields: [createdById], references: [id])
+  statusHistory      PaymentStatusHistory[]
+  complianceChecks   ComplianceCheck[]
+  approvalRequest    ApprovalRequest?
+  ledgerTransactions LedgerTransaction[]
+  providerPayments   ProviderPayment[]
+  reconciliationItems ReconciliationItem[]
+
+  @@unique([companyId, idempotencyKey])
+  @@unique([quoteId, companyId])
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@index([beneficiaryId])
+  @@index([status, createdAt])
+  @@map("payment_orders")
+}
+
+model PaymentStatusHistory {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  paymentId   String         @map("payment_id") @db.Uuid
+  fromStatus  PaymentStatus? @map("from_status")
+  toStatus    PaymentStatus  @map("to_status")
+  reason      String?
+  actorType   String         @map("actor_type") // USER | SYSTEM | PROVIDER
+  actorId     String?        @map("actor_id") @db.Uuid
+  metadata    Json?
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment PaymentOrder @relation(fields: [paymentId], references: [id])
+
+  @@index([paymentId, createdAt])
+  @@map("payment_status_history")
+}
+
+// ──────────────────────────── Compliance ────────────────────────────
+
+model ComplianceRule {
+  id          String             @id @default(uuid(7)) @db.Uuid
+  code        String             @unique
+  type        ComplianceRuleType
+  name        String
+  description String?
+  parameters  Json
+  outcome     ComplianceOutcome // outcome when the rule fires: REVIEW or REJECT
+  enabled     Boolean            @default(true)
+  version     Int                @default(1)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  checks ComplianceCheck[]
+
+  @@index([enabled])
+  @@map("compliance_rules")
+}
+
+model ComplianceCheck {
+  id            String            @id @default(uuid(7)) @db.Uuid
+  companyId     String            @map("company_id") @db.Uuid
+  paymentId     String            @map("payment_id") @db.Uuid
+  ruleId        String?           @map("rule_id") @db.Uuid // null for the manual decision record
+  ruleCode      String            @map("rule_code")
+  ruleVersion   Int               @map("rule_version")
+  triggered     Boolean
+  outcome       ComplianceOutcome
+  details       Json?
+  decidedById   String?           @map("decided_by") @db.Uuid
+  decisionNote  String?           @map("decision_note")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  company   Company         @relation(fields: [companyId], references: [id])
+  payment   PaymentOrder    @relation(fields: [paymentId], references: [id])
+  rule      ComplianceRule? @relation(fields: [ruleId], references: [id])
+  decidedBy User?           @relation("ComplianceDecider", fields: [decidedById], references: [id])
+
+  @@index([paymentId])
+  @@index([companyId, createdAt])
+  @@index([outcome])
+  @@map("compliance_checks")
+}
+
+// ─────────────────────────── Maker-checker ───────────────────────────
+
+model ApprovalRequest {
+  id            String                @id @default(uuid(7)) @db.Uuid
+  companyId     String                @map("company_id") @db.Uuid
+  paymentId     String                @unique @map("payment_id") @db.Uuid
+  requestedById String                @map("requested_by") @db.Uuid
+  status        ApprovalRequestStatus @default(PENDING)
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt    DateTime?             @map("resolved_at") @db.Timestamptz(6)
+
+  company     Company          @relation(fields: [companyId], references: [id])
+  payment     PaymentOrder     @relation(fields: [paymentId], references: [id])
+  requestedBy User             @relation("ApprovalRequester", fields: [requestedById], references: [id])
+  actions     ApprovalAction[]
+
+  @@index([companyId, status])
+  @@map("approval_requests")
+}
+
+model ApprovalAction {
+  id                String             @id @default(uuid(7)) @db.Uuid
+  approvalRequestId String             @map("approval_request_id") @db.Uuid
+  paymentId         String             @map("payment_id") @db.Uuid
+  actorId           String             @map("actor_id") @db.Uuid
+  action            ApprovalActionType
+  reason            String?
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  approvalRequest ApprovalRequest @relation(fields: [approvalRequestId], references: [id])
+  actor           User            @relation(fields: [actorId], references: [id])
+
+  @@index([approvalRequestId])
+  @@index([paymentId])
+  @@map("approval_actions")
+}
+
+// ────────────────────────────── Ledger ──────────────────────────────
+
+model LedgerAccount {
+  id            String            @id @default(uuid(7)) @db.Uuid
+  companyId     String?           @map("company_id") @db.Uuid // null = system account
+  code          String // chart-of-accounts code, e.g. "2000"
+  name          String
+  type          LedgerAccountType
+  normalBalance EntryDirection    @map("normal_balance")
+  currency      String            @db.Char(3)
+  balance       Decimal           @default(0) @db.Decimal(20, 4) // cache; truth is SUM(entries)
+  version       Int               @default(0)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  company Company?      @relation(fields: [companyId], references: [id])
+  entries LedgerEntry[]
+
+  @@unique([companyId, code]) // system accounts (company_id NULL) get a partial unique index in SQL
+  @@unique([id, currency]) // target for composite FK: entry currency must equal account currency
+  @@index([companyId])
+  @@map("ledger_accounts")
+}
+
+model LedgerTransaction {
+  id                    String                @id @default(uuid(7)) @db.Uuid
+  postingKey            String                @unique @map("posting_key") // e.g. payment:{id}:capture
+  type                  LedgerTransactionType
+  companyId             String?               @map("company_id") @db.Uuid
+  paymentId             String?               @map("payment_id") @db.Uuid
+  reversesTransactionId String?               @unique @map("reverses_transaction_id") @db.Uuid
+  description           String
+  createdById           String?               @map("created_by") @db.Uuid
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  company    Company?           @relation(fields: [companyId], references: [id])
+  payment    PaymentOrder?      @relation(fields: [paymentId], references: [id])
+  reverses   LedgerTransaction? @relation("Reversal", fields: [reversesTransactionId], references: [id])
+  reversedBy LedgerTransaction? @relation("Reversal")
+  entries    LedgerEntry[]
+
+  @@index([paymentId])
+  @@index([companyId, createdAt])
+  @@index([type, createdAt])
+  @@map("ledger_transactions")
+}
+
+model LedgerEntry {
+  id            String         @id @default(uuid(7)) @db.Uuid
+  transactionId String         @map("transaction_id") @db.Uuid
+  accountId     String         @map("account_id") @db.Uuid
+  direction     EntryDirection
+  amount        Decimal        @db.Decimal(20, 4) // always > 0 (CHECK)
+  currency      String         @db.Char(3)
+  balanceAfter  Decimal        @map("balance_after") @db.Decimal(20, 4)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  transaction LedgerTransaction @relation(fields: [transactionId], references: [id])
+  account     LedgerAccount     @relation(fields: [accountId, currency], references: [id, currency])
+
+  @@index([transactionId])
+  @@index([accountId, createdAt])
+  @@map("ledger_entries")
+}
+
+// ─────────────────────── Provider and webhooks ───────────────────────
+
+// The mock provider's own book of record. Payment business logic never reads
+// this table; only the mock adapter and reconciliation do.
+model ProviderPayment {
+  id                String                @id @default(uuid(7)) @db.Uuid
+  providerPaymentId String                @unique @map("provider_payment_id")
+  paymentId         String?               @map("payment_id") @db.Uuid // not unique: duplicates must be representable
+  idempotencyKey    String?               @map("idempotency_key")
+  amount            Decimal               @db.Decimal(20, 4)
+  currency          String                @db.Char(3)
+  status            ProviderPaymentStatus
+  scenario          String? // deterministic test scenario that produced this record
+  failureReason     String?               @map("failure_reason")
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payment PaymentOrder? @relation(fields: [paymentId], references: [id])
+
+  @@index([paymentId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("provider_payments")
+}
+
+model WebhookEvent {
+  id                String             @id @default(uuid(7)) @db.Uuid
+  eventId           String             @unique @map("event_id")
+  eventType         String             @map("event_type")
+  providerPaymentId String?            @map("provider_payment_id")
+  paymentId         String?            @map("payment_id") @db.Uuid
+  payload           Json
+  signatureValid    Boolean            @map("signature_valid")
+  status            WebhookEventStatus @default(RECEIVED)
+  error             String?
+  attempts          Int                @default(0)
+  receivedAt        DateTime           @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt       DateTime?          @map("processed_at") @db.Timestamptz(6)
+
+  @@index([paymentId])
+  @@index([status, receivedAt])
+  @@index([providerPaymentId])
+  @@map("webhook_events")
+}
+
+// ─────────────────────────── Reconciliation ───────────────────────────
+
+model ReconciliationRun {
+  id            String                  @id @default(uuid(7)) @db.Uuid
+  status        ReconciliationRunStatus @default(RUNNING)
+  periodFrom    DateTime                @map("period_from") @db.Timestamptz(6)
+  periodTo      DateTime                @map("period_to") @db.Timestamptz(6)
+  triggeredById String?                 @map("triggered_by") @db.Uuid // null = scheduled
+  totalItems    Int                     @default(0) @map("total_items")
+  matchedCount  Int                     @default(0) @map("matched_count")
+  issueCount    Int                     @default(0) @map("issue_count")
+  error         String?
+  startedAt     DateTime                @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt   DateTime?               @map("completed_at") @db.Timestamptz(6)
+
+  items ReconciliationItem[]
+
+  @@index([startedAt])
+  @@index([status])
+  @@map("reconciliation_runs")
+}
+
+model ReconciliationItem {
+  id                String               @id @default(uuid(7)) @db.Uuid
+  runId             String               @map("run_id") @db.Uuid
+  companyId         String?              @map("company_id") @db.Uuid
+  paymentId         String?              @map("payment_id") @db.Uuid
+  providerPaymentId String?              @map("provider_payment_id")
+  currency          String?              @db.Char(3)
+  status            ReconciliationStatus
+  reasonCodes       String[]             @map("reason_codes")
+  internalSnapshot  Json?                @map("internal_snapshot")
+  providerSnapshot  Json?                @map("provider_snapshot")
+  ledgerSnapshot    Json?                @map("ledger_snapshot")
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  run     ReconciliationRun @relation(fields: [runId], references: [id])
+  payment PaymentOrder?     @relation(fields: [paymentId], references: [id])
+
+  @@index([runId, status])
+  @@index([paymentId])
+  @@index([companyId, createdAt])
+  @@map("reconciliation_items")
+}
+
+// ───────────────────── Cross-cutting infrastructure ─────────────────────
+
+// Append-only. No foreign keys on purpose: audit rows must outlive and never
+// block changes to the entities they describe.
+model AuditLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  companyId  String?  @map("company_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  requestId  String?  @map("request_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([companyId, createdAt])
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+model IdempotencyKey {
+  id             String            @id @default(uuid(7)) @db.Uuid
+  companyId      String            @map("company_id") @db.Uuid
+  key            String
+  endpoint       String
+  requestHash    String            @map("request_hash")
+  status         IdempotencyStatus @default(IN_PROGRESS)
+  responseStatus Int?              @map("response_status")
+  responseBody   Json?             @map("response_body")
+  resourceId     String?           @map("resource_id")
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt      DateTime          @map("expires_at") @db.Timestamptz(6)
+
+  @@unique([companyId, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid(7)) @db.Uuid
+  sequence      BigInt       @unique @default(autoincrement()) // FIFO tie-breaker for events due at the same instant
+  eventType     String       @map("event_type")
+  aggregateType String       @map("aggregate_type")
+  aggregateId   String       @map("aggregate_id")
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  lastError     String?      @map("last_error")
+  availableAt   DateTime     @default(now()) @map("available_at") @db.Timestamptz(6)
+  lockedAt      DateTime?    @map("locked_at") @db.Timestamptz(6)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  publishedAt   DateTime?    @map("published_at") @db.Timestamptz(6)
+
+  @@index([status, availableAt])
+  @@map("outbox_events")
+}
