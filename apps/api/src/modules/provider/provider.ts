@@ -158,12 +158,12 @@ export class MockPaymentProvider extends PaymentProvider implements OnModuleInit
     });
     const target = `${this.config.WEBHOOK_TARGET_URL ?? `http://localhost:${this.config.PORT}`}/api/v1/webhooks/provider`;
     // Typed structurally: only these two fields are used, whichever fetch typings the build resolves.
-    const response: { ok: boolean; status: number } = await fetch(target, {
+    const response = (await fetch(target, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-paybridge-signature': signWebhook(this.config.WEBHOOK_SIGNING_SECRET, Math.floor(Date.now() / 1000), body) },
       body,
       signal: AbortSignal.timeout(10_000),
-    });
+    })) as unknown as { ok: boolean; status: number };
     if (!response.ok) {
       logger.warn({ eventId: p.eventId, status: response.status }, 'webhook delivery rejected; the provider will retry');
       throw new Error(`Webhook delivery failed with HTTP ${response.status}`);
