@@ -215,7 +215,8 @@ Idempotent-Replayed: true`}</code></pre>
                   <Link href="/login" className="btn btn-lg group bg-white text-navy-900 hover:bg-white/90">
                     Enter sandbox <ArrowRight aria-hidden="true" className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
                   </Link>
-                  <Link href="/api/docs" className="btn btn-lg border-white/25 text-white hover:bg-white/10">API reference</Link>
+                  {/* Served by the API, not by Next.js: a plain anchor, so the router does not try to prefetch it. */}
+                  <a href="/api/docs" className="btn btn-lg border-white/25 text-white hover:bg-white/10">API reference</a>
                 </div>
               </div>
             </div>

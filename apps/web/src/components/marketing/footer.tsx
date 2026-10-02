@@ -22,7 +22,12 @@ export function Footer() {
             <ul className="mt-4 space-y-2.5">
               {col.links.map((l) => (
                 <li key={l.label}>
-                  <Link href={l.href} className="text-muted-foreground transition-colors duration-200 hover:text-primary">{l.label}</Link>
+                  {l.href.startsWith('/api/') ? (
+                    // Served by the API, not by Next.js: a plain anchor, so the router does not try to prefetch it.
+                    <a href={l.href} className="text-muted-foreground transition-colors duration-200 hover:text-primary">{l.label}</a>
+                  ) : (
+                    <Link href={l.href} className="text-muted-foreground transition-colors duration-200 hover:text-primary">{l.label}</Link>
+                  )}
                 </li>
               ))}
             </ul>

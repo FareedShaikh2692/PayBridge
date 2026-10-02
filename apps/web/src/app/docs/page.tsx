@@ -91,7 +91,7 @@ total_debit      = base + fee                             AED 10,025.00`}</code>
               </div>
 
               <H2 id="api">API</H2>
-              <p className="mt-3 text-muted-foreground">The REST API lives under <code className="num rounded bg-muted px-1.5 py-0.5 text-foreground">/api/v1</code>. Amounts are decimal strings, timestamps are ISO 8601 UTC, and every response carries a request id. The full contract is in the <Link href="/api/docs" className="link">interactive API reference</Link>.</p>
+              <p className="mt-3 text-muted-foreground">The REST API lives under <code className="num rounded bg-muted px-1.5 py-0.5 text-foreground">/api/v1</code>. Amounts are decimal strings, timestamps are ISO 8601 UTC, and every response carries a request id. The full contract is in the <a href="/api/docs" className="link">interactive API reference</a>.</p>
             </div>
           </article>
         </Container>
