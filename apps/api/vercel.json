@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nestjs",
+  "buildCommand": "bash ../../infra/scripts/vercel-build-api.sh",
+  "crons": [{ "path": "/api/v1/internal/cron", "schedule": "0 3 * * *" }]
+}
