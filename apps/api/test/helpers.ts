@@ -36,7 +36,10 @@ export async function createTestApp(options: { env?: Record<string, string>; res
   try {
     moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   } finally {
-    for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   }
   const app = moduleRef.createNestApplication({ rawBody: true, logger: false });
   configureApp(app);

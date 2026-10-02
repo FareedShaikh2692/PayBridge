@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { FxQuote, Prisma } from '@paybridge/database';
 import { calculateQuote, dec, money, rate } from '@paybridge/shared';
-import { Actor, requireCompany, tenantWhere } from '../../common/actor';
+import { Actor, requireCompany } from '../../common/actor';
 import { Clock } from '../../common/clock';
 import { DomainError } from '../../common/errors';
 import { PageQuery, paged, skipTake } from '../../common/pagination';
@@ -9,6 +9,7 @@ import { Db, PrismaService } from '../../common/prisma.service';
 import { AppConfig, CONFIG } from '../../config';
 import { AuditService } from '../audit/audit.service';
 import { KybService } from '../kyb/kyb.service';
+import { QuotesRepository } from './fx.repository';
 
 export abstract class RateProvider {
   abstract getMidRate(base: string, quote: string): Promise<string>;
@@ -30,6 +31,7 @@ export class MockRateProvider extends RateProvider {
 export class FxService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly repo: QuotesRepository,
     private readonly audit: AuditService,
     private readonly kyb: KybService,
     private readonly rates: RateProvider,
@@ -69,23 +71,21 @@ export class FxService {
     const expiresAt = new Date(createdAt.getTime() + this.config.QUOTE_TTL_SECONDS * 1000);
 
     return this.prisma.transaction(async (tx) => {
-      const quote = await tx.fxQuote.create({
-        data: {
-          companyId,
-          baseCurrency: 'AED',
-          quoteCurrency: 'INR',
-          baseAmount: q.baseAmount,
-          midMarketRate: q.midMarketRate,
-          spreadPercentage: q.spreadPercentage,
-          customerRate: q.customerRate,
-          feeAmount: q.feeAmount,
-          fxMarginAmount: q.fxMarginAmount,
-          totalDebitAmount: q.totalDebitAmount,
-          recipientAmount: q.recipientAmount,
-          createdById: actor.userId,
-          createdAt,
-          expiresAt,
-        },
+      const quote = await this.repo.create(tx, {
+        companyId,
+        baseCurrency: 'AED',
+        quoteCurrency: 'INR',
+        baseAmount: q.baseAmount,
+        midMarketRate: q.midMarketRate,
+        spreadPercentage: q.spreadPercentage,
+        customerRate: q.customerRate,
+        feeAmount: q.feeAmount,
+        fxMarginAmount: q.fxMarginAmount,
+        totalDebitAmount: q.totalDebitAmount,
+        recipientAmount: q.recipientAmount,
+        createdById: actor.userId,
+        createdAt,
+        expiresAt,
       });
       await this.audit.record(tx, { action: 'QUOTE_CREATED', entityType: 'fx_quote', entityId: quote.id, companyId, newValue: this.view(quote) });
       return this.view(quote);
@@ -93,7 +93,7 @@ export class FxService {
   }
 
   async get(actor: Actor, id: string) {
-    const quote = await this.prisma.client.fxQuote.findFirst({ where: { id, ...tenantWhere(actor) }, include: { payment: { select: { id: true, reference: true } } } });
+    const quote = await this.repo.findById(actor, id);
     if (!quote) throw new DomainError('QUOTE_NOT_FOUND');
     return this.view(quote);
   }
@@ -101,25 +101,20 @@ export class FxService {
   async list(actor: Actor, q: PageQuery & { status?: string }) {
     const now = this.clock.now();
     const where: Prisma.FxQuoteWhereInput = {
-      ...tenantWhere(actor),
       ...(q.status === 'EXPIRED' ? { OR: [{ status: 'EXPIRED' }, { status: 'ACTIVE', expiresAt: { lte: now } }] } : {}),
       ...(q.status === 'ACTIVE' ? { status: 'ACTIVE', expiresAt: { gt: now } } : {}),
       ...(q.status === 'USED' || q.status === 'CANCELLED' ? { status: q.status } : {}),
     };
-    const [items, total] = await Promise.all([
-      this.prisma.client.fxQuote.findMany({ where, orderBy: { createdAt: 'desc' }, ...skipTake(q), include: { payment: { select: { id: true, reference: true } }, createdBy: { select: { fullName: true } } } }),
-      this.prisma.client.fxQuote.count({ where }),
-    ]);
+    const { items, total } = await this.repo.list(actor, where, skipTake(q).skip, skipTake(q).take);
     return paged(items.map((i) => this.view(i)), total, q);
   }
 
   /** ExpireQuotes job: tidies stored status. Expiry itself is always enforced by timestamp at the point of use. */
-  async sweepExpired(db: Db = this.prisma.client): Promise<number> {
-    const res = await db.fxQuote.updateMany({ where: { status: 'ACTIVE', expiresAt: { lte: this.clock.now() } }, data: { status: 'EXPIRED' } });
-    return res.count;
+  sweepExpired(db: Db = this.prisma.client): Promise<number> {
+    return this.repo.expireDue(db, this.clock.now());
   }
 
-  view(q: FxQuote & { payment?: { id: string; reference: string } | null; createdBy?: { fullName: string } }) {
+  view(q: FxQuote & { payment?: { id: string; reference: string } | null; createdBy?: { fullName: string } | null }) {
     const now = this.clock.now();
     const expired = q.status === 'ACTIVE' && q.expiresAt <= now;
     return {

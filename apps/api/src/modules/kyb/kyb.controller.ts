@@ -18,7 +18,7 @@ export const KYB_DOCUMENT_TYPES = ['TRADE_LICENSE', 'MEMORANDUM_OF_ASSOCIATION',
 
 class AddKybDocumentDto {
   @ApiProperty({ enum: KYB_DOCUMENT_TYPES }) @IsIn(KYB_DOCUMENT_TYPES as unknown as string[]) documentType: string;
-  @ApiProperty({ example: 'trade-licence.pdf' }) @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value)) @IsString() @MinLength(1) @MaxLength(200) @Matches(/^[^\\/\u0000-\u001f]+$/, { message: 'fileName must be a plain file name.' }) fileName: string;
+  @ApiProperty({ example: 'trade-licence.pdf' }) @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value)) @IsString() @MinLength(1) @MaxLength(200) @Matches(/^[\w .()-]+$/, { message: 'fileName must be a plain file name.' }) fileName: string;
   @ApiPropertyOptional({ description: 'SHA-256 of the file, hex' }) @IsOptional() @Matches(/^[0-9a-f]{64}$/) checksum?: string;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) @Max(50_000_000) sizeBytes?: number;
 }

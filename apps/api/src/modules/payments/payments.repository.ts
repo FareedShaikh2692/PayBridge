@@ -33,6 +33,14 @@ export class PaymentsRepository {
     return { items, total };
   }
 
+  exists(tx: Tx, id: string) {
+    return tx.paymentOrder.findUnique({ where: { id }, select: { id: true } });
+  }
+
+  setProviderPaymentId(tx: Tx, id: string, providerPaymentId: string) {
+    return tx.paymentOrder.update({ where: { id }, data: { providerPaymentId } });
+  }
+
   /**
    * Locks the payment row for the rest of the transaction. Every state change goes through this, so
    * approvals, cancellations, processing and webhooks for one payment are strictly serialised.

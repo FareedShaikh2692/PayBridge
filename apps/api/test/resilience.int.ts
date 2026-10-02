@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import { RateLimitStorage } from '../src/common/throttler.storage';
-import { PASSWORD, TestApp, auth, createPayment, createPlatformAdmin, createTenant, createTestApp, expectLedgerSound, getPayment } from './helpers';
+import { PASSWORD, TestApp, createPayment, createPlatformAdmin, createTenant, createTestApp, expectLedgerSound, getPayment } from './helpers';
 
 const REDIS_URL = process.env.TEST_REDIS_URL ?? 'redis://localhost:6379';
 const DEAD_REDIS = 'redis://127.0.0.1:1';

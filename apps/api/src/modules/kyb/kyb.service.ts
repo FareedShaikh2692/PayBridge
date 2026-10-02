@@ -9,11 +9,13 @@ import { AppConfig, CONFIG } from '../../config';
 import { AuditService } from '../audit/audit.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { KybProvider } from './kyb.provider';
+import { KybRepository } from './kyb.repository';
 
 @Injectable()
 export class KybService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly repo: KybRepository,
     private readonly audit: AuditService,
     private readonly ledger: LedgerService,
     private readonly provider: KybProvider,
@@ -24,7 +26,7 @@ export class KybService {
   /** The only place a KYB status is written. */
   async transition(tx: Tx, profile: KybProfile, to: KybStatus, data: Prisma.KybProfileUncheckedUpdateInput, action: string): Promise<KybProfile> {
     kybMachine.assert(profile.status, to);
-    const updated = await tx.kybProfile.update({ where: { id: profile.id }, data: { ...data, status: to } });
+    const updated = await this.repo.update(tx, profile.id, { ...data, status: to });
     await this.audit.record(tx, {
       action,
       entityType: 'kyb_profile',
@@ -38,7 +40,7 @@ export class KybService {
 
   async submit(actor: Actor) {
     const companyId = requireCompany(actor);
-    const company = await this.prisma.client.company.findUniqueOrThrow({ where: { id: companyId }, include: { kybProfile: true } });
+    const company = await this.repo.companyWithProfile(companyId);
     const profile = company.kybProfile!;
     kybMachine.assert(profile.status, 'SUBMITTED');
 
@@ -51,8 +53,7 @@ export class KybService {
     });
 
     return this.prisma.transaction(async (tx) => {
-      const [locked] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM kyb_profiles WHERE id = ${profile.id}::uuid FOR UPDATE`;
-      let current = await tx.kybProfile.findUniqueOrThrow({ where: { id: locked.id } });
+      let current = await this.repo.lock(tx, profile.id);
       current = await this.transition(tx, current, 'SUBMITTED', { submittedAt: this.clock.now(), rejectionReason: null, reviewedAt: null, reviewedById: null }, 'KYB_SUBMITTED');
       current = await this.transition(tx, current, 'UNDER_REVIEW', { verificationResult: verification as unknown as Prisma.InputJsonValue, riskLevel: verification.riskLevel }, 'KYB_UNDER_REVIEW');
       if (this.config.KYB_AUTO_APPROVE && verification.result === 'PASS' && verification.riskLevel === 'LOW') {
@@ -69,11 +70,12 @@ export class KybService {
   async addDocument(actor: Actor, dto: { documentType: string; fileName: string; checksum?: string; sizeBytes?: number }) {
     const companyId = requireCompany(actor);
     return this.prisma.transaction(async (tx) => {
-      const profile = await tx.kybProfile.findUniqueOrThrow({ where: { companyId } });
+      const profile = await this.repo.findByCompany(tx, companyId);
+      if (!profile) throw new DomainError('COMPANY_NOT_FOUND');
       if (!['DRAFT', 'REJECTED', 'EXPIRED'].includes(profile.status)) {
         throw new DomainError('INVALID_STATE_TRANSITION', `Documents cannot be added while KYB is ${profile.status}.`);
       }
-      const document = await tx.kybDocument.create({ data: { kybProfileId: profile.id, documentType: dto.documentType, fileName: dto.fileName, checksum: dto.checksum, sizeBytes: dto.sizeBytes, uploadedById: actor.userId } });
+      const document = await this.repo.addDocument(tx, { kybProfileId: profile.id, documentType: dto.documentType, fileName: dto.fileName, checksum: dto.checksum, sizeBytes: dto.sizeBytes, uploadedById: actor.userId });
       await this.audit.record(tx, { action: 'KYB_DOCUMENT_ADDED', entityType: 'kyb_profile', entityId: profile.id, companyId, newValue: { documentType: dto.documentType, fileName: dto.fileName } });
       return document;
     });
@@ -81,7 +83,7 @@ export class KybService {
 
   async get(actor: Actor, companyId: string) {
     assertCompanyAccess(actor, companyId);
-    const profile = await this.prisma.client.kybProfile.findUnique({ where: { companyId }, include: { documents: { orderBy: { createdAt: 'asc' } }, reviewedBy: { select: { fullName: true } } } });
+    const profile = await this.repo.findDetail(companyId);
     if (!profile) throw new DomainError('COMPANY_NOT_FOUND');
     return this.view(profile);
   }
@@ -103,7 +105,7 @@ export class KybService {
   }
 
   private async approveInTx(tx: Tx, profile: KybProfile, reviewerId: string | null, riskLevel: RiskLevel, note?: string) {
-    const company = await tx.company.findUniqueOrThrow({ where: { id: profile.companyId } });
+    const company = await this.repo.company(tx, profile.companyId);
     const updated = await this.transition(
       tx,
       profile,
@@ -117,14 +119,13 @@ export class KybService {
   }
 
   private async lock(tx: Tx, id: string): Promise<KybProfile> {
-    const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM kyb_profiles WHERE id = ${id}::uuid FOR UPDATE`;
-    if (!rows.length) throw new DomainError('NOT_FOUND', 'The KYB profile was not found.');
-    return tx.kybProfile.findUniqueOrThrow({ where: { id } });
+    return this.repo.lock(tx, id);
   }
 
   /** Called when company details are edited after a rejection or expiry: the profile returns to DRAFT for resubmission. */
   async reopenIfNeeded(tx: Tx, companyId: string): Promise<void> {
-    const profile = await tx.kybProfile.findUniqueOrThrow({ where: { companyId } });
+    const profile = await this.repo.findByCompany(tx, companyId);
+    if (!profile) return;
     if (profile.status === 'REJECTED' || profile.status === 'EXPIRED') {
       await this.transition(tx, profile, 'DRAFT', {}, 'KYB_REOPENED');
     }
@@ -132,7 +133,7 @@ export class KybService {
 
   /** Gate used by quoting, payments and top-ups. Also expires a profile whose trade licence has lapsed. */
   async assertApproved(companyId: string): Promise<void> {
-    const profile = await this.prisma.client.kybProfile.findUnique({ where: { companyId } });
+    const profile = await this.repo.findByCompany(this.prisma.client, companyId);
     if (!profile) throw new DomainError('COMPANY_NOT_FOUND');
     if (profile.status === 'APPROVED' && profile.expiresAt && this.endOfDay(profile.expiresAt) < this.clock.now()) {
       await this.prisma.transaction(async (tx) => {
@@ -146,7 +147,7 @@ export class KybService {
 
   /** Scheduled sweep (P1): expire every approved profile whose licence date has passed. */
   async expireLapsed(): Promise<number> {
-    const lapsed = await this.prisma.client.kybProfile.findMany({ where: { status: 'APPROVED', expiresAt: { lt: new Date(this.clock.now().getTime() - 86_400_000) } }, select: { companyId: true } });
+    const lapsed = await this.repo.approvedAndLapsedBefore(new Date(this.clock.now().getTime() - 86_400_000));
     for (const p of lapsed) await this.assertApproved(p.companyId).catch(() => undefined);
     return lapsed.length;
   }

@@ -1,12 +1,7 @@
-import { Controller, Get, HttpCode, Inject, Injectable, OnModuleInit, Post, Query, Req } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { Prisma, WebhookEventStatus } from '@paybridge/database';
-import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
-import type { Request } from 'express';
 import { Clock } from '../../common/clock';
 import { verifyWebhookSignature } from '../../common/crypto';
-import { Permissions, Public } from '../../common/decorators';
 import { DomainError } from '../../common/errors';
 import { logger } from '../../common/logger';
 import { PageQuery, paged, skipTake } from '../../common/pagination';
@@ -16,6 +11,7 @@ import { AuditService } from '../audit/audit.service';
 import { OutboxService } from '../outbox/outbox.service';
 import { PaymentsRepository } from '../payments/payments.repository';
 import { PaymentsService } from '../payments/payments.service';
+import { WebhooksRepository } from './webhooks.repository';
 
 const EVENT_TYPES = ['payment.created', 'payment.compliance_review', 'payment.processing', 'payment.paid', 'payment.failed', 'payment.returned'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -34,6 +30,7 @@ interface WebhookPayload {
 export class WebhooksService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly repo: WebhooksRepository,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
     private readonly payments: PaymentsService,
@@ -56,7 +53,7 @@ export class WebhooksService implements OnModuleInit {
     const verification = verifyWebhookSignature(this.config.WEBHOOK_SIGNING_SECRET, signature, raw, Math.floor(Date.now() / 1000), this.config.WEBHOOK_TOLERANCE_SECONDS);
     if (!verification.valid) {
       logger.warn({ reason: verification.reason }, 'webhook rejected');
-      await this.audit.record(this.prisma.client, { action: 'WEBHOOK_REJECTED', entityType: 'webhook_event', companyId: null, userId: null, newValue: { reason: verification.reason } });
+      await this.audit.record(this.repo.db, { action: 'WEBHOOK_REJECTED', entityType: 'webhook_event', companyId: null, userId: null, newValue: { reason: verification.reason } });
       throw new DomainError('INVALID_WEBHOOK');
     }
 
@@ -75,18 +72,15 @@ export class WebhooksService implements OnModuleInit {
 
     return this.prisma.transaction(async (tx) => {
       // INSERT … ON CONFLICT DO NOTHING on the unique event_id: the second copy of an event inserts nothing.
-      const inserted = await tx.webhookEvent.createMany({
-        data: [{
-          eventId: payload.event_id,
-          eventType: payload.event_type,
-          providerPaymentId: payload.provider_payment_id,
-          paymentId: UUID.test(payload.payment_id) ? payload.payment_id : null,
-          payload: payload as unknown as Prisma.InputJsonValue,
-          signatureValid: true,
-        }],
-        skipDuplicates: true,
+      const stored = await this.repo.insertOnce(tx, {
+        eventId: payload.event_id,
+        eventType: payload.event_type,
+        providerPaymentId: payload.provider_payment_id,
+        paymentId: UUID.test(payload.payment_id) ? payload.payment_id : null,
+        payload: payload as unknown as Prisma.InputJsonValue,
+        signatureValid: true,
       });
-      if (inserted.count === 0) return { received: true as const, duplicate: true };
+      if (!stored) return { received: true as const, duplicate: true };
       await this.audit.record(tx, { action: 'WEBHOOK_RECEIVED', entityType: 'webhook_event', entityId: payload.event_id, companyId: null, userId: null, newValue: { eventType: payload.event_type, paymentId: payload.payment_id } });
       await this.outbox.enqueue(tx, { eventType: 'webhook.received', aggregateType: 'webhook_event', aggregateId: payload.event_id, payload: { eventId: payload.event_id } });
       return { received: true as const, duplicate: false };
@@ -99,16 +93,15 @@ export class WebhooksService implements OnModuleInit {
    */
   async process(eventId: string): Promise<void> {
     await this.prisma.transaction(async (tx) => {
-      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM webhook_events WHERE event_id = ${eventId} FOR UPDATE`;
-      if (!locked.length) return;
-      const event = await tx.webhookEvent.findUniqueOrThrow({ where: { eventId } });
+      const event = await this.repo.lock(tx, eventId);
+      if (!event) return;
       if (event.status === 'PROCESSED' || event.status === 'IGNORED') return;
       const payload = event.payload as unknown as WebhookPayload;
 
       const finish = (status: WebhookEventStatus, error: string | null) =>
-        tx.webhookEvent.update({ where: { id: event.id }, data: { status, error, processedAt: this.clock.now(), attempts: { increment: 1 } } });
+        this.repo.finish(tx, event.id, status, error, this.clock.now());
 
-      const exists = event.paymentId ? await tx.paymentOrder.findUnique({ where: { id: event.paymentId }, select: { id: true } }) : null;
+      const exists = event.paymentId ? await this.paymentsRepo.exists(tx, event.paymentId) : null;
       if (!exists) {
         // Not retried: a webhook for a payment we do not know will not become valid by waiting.
         logger.error({ eventId, paymentId: payload.payment_id }, 'webhook references an unknown payment');
@@ -119,7 +112,7 @@ export class WebhooksService implements OnModuleInit {
       const meta = { eventId, providerPaymentId: payload.provider_payment_id };
 
       if (payment.providerPaymentId === null) {
-        await tx.paymentOrder.update({ where: { id: payment.id }, data: { providerPaymentId: payload.provider_payment_id } });
+        await this.paymentsRepo.setProviderPaymentId(tx, payment.id, payload.provider_payment_id);
       } else if (payment.providerPaymentId !== payload.provider_payment_id) {
         await finish('IGNORED', `Provider payment id mismatch: expected ${payment.providerPaymentId}`);
         return;
@@ -162,39 +155,7 @@ export class WebhooksService implements OnModuleInit {
 
   async list(q: PageQuery & { status?: WebhookEventStatus; paymentId?: string; eventType?: string }) {
     const where: Prisma.WebhookEventWhereInput = { ...(q.status ? { status: q.status } : {}), ...(q.paymentId ? { paymentId: q.paymentId } : {}), ...(q.eventType ? { eventType: q.eventType } : {}) };
-    const [items, total] = await Promise.all([
-      this.prisma.client.webhookEvent.findMany({ where, orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }], ...skipTake(q) }),
-      this.prisma.client.webhookEvent.count({ where }),
-    ]);
+    const { items, total } = await this.repo.list(where, skipTake(q).skip, skipTake(q).take);
     return paged(items, total, q);
-  }
-}
-
-class WebhookQuery extends PageQuery {
-  @ApiPropertyOptional({ enum: ['RECEIVED', 'PROCESSED', 'IGNORED', 'FAILED'] }) @IsOptional() @IsIn(['RECEIVED', 'PROCESSED', 'IGNORED', 'FAILED']) status?: WebhookEventStatus;
-  @ApiPropertyOptional() @IsOptional() @IsUUID() paymentId?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() eventType?: string;
-}
-
-@ApiTags('Webhooks')
-@Controller()
-export class WebhooksController {
-  constructor(private readonly webhooks: WebhooksService) {}
-
-  /** Authenticated by HMAC signature, not by JWT. Always answers 200 for a verified event, duplicate or not. */
-  @Post('webhooks/provider')
-  @Public()
-  @HttpCode(200)
-  @Throttle({ default: { limit: 600, ttl: 60_000 } })
-  @ApiHeader({ name: 'X-PayBridge-Signature', description: 't=<unix seconds>,v1=<hex HMAC-SHA256 of "t.rawBody">' })
-  receive(@Req() req: Request & { rawBody?: Buffer }) {
-    return this.webhooks.receive(req.rawBody, req.header('x-paybridge-signature'));
-  }
-
-  @Get('admin/webhook-events')
-  @ApiBearerAuth()
-  @Permissions('webhook.read')
-  list(@Query() q: WebhookQuery) {
-    return this.webhooks.list(q);
   }
 }

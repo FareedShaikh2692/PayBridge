@@ -6,11 +6,13 @@ import { AuthGuard } from './common/auth.guard';
 import { AllExceptionsFilter, EnvelopeInterceptor, RequestContextMiddleware } from './common/http';
 import { RateLimitStorage } from './common/throttler.storage';
 import { AuthController } from './modules/auth/auth.controller';
+import { AuthRepository } from './modules/auth/auth.repository';
 import { AuthService } from './modules/auth/auth.service';
 import { BeneficiariesController } from './modules/beneficiaries/beneficiaries.controller';
 import { BeneficiariesRepository } from './modules/beneficiaries/beneficiaries.repository';
 import { BeneficiariesService } from './modules/beneficiaries/beneficiaries.service';
 import { CompaniesController } from './modules/companies/companies.controller';
+import { CompaniesRepository } from './modules/companies/companies.repository';
 import { CompaniesService } from './modules/companies/companies.service';
 import { ComplianceController, ComplianceService } from './modules/compliance/compliance.controller';
 import { ComplianceEngine } from './modules/compliance/compliance.engine';
@@ -18,9 +20,11 @@ import { MockSanctionsProvider, SanctionsProvider } from './modules/compliance/s
 import { CoreModule } from './modules/core.module';
 import { DashboardController, DashboardService } from './modules/dashboard/dashboard';
 import { FxController } from './modules/fx/fx.controller';
+import { QuotesRepository } from './modules/fx/fx.repository';
 import { FxService, MockRateProvider, RateProvider } from './modules/fx/fx.service';
 import { KybController } from './modules/kyb/kyb.controller';
 import { KybProvider, MockKYBProvider } from './modules/kyb/kyb.provider';
+import { KybRepository } from './modules/kyb/kyb.repository';
 import { KybService } from './modules/kyb/kyb.service';
 import { LedgerController } from './modules/ledger/ledger.controller';
 import { LedgerService } from './modules/ledger/ledger.service';
@@ -33,20 +37,22 @@ import { MockPaymentProvider, PaymentProvider, ProviderSubmissionService, Sandbo
 import { ReconciliationController } from './modules/reconciliation/reconciliation.controller';
 import { ReconciliationService } from './modules/reconciliation/reconciliation.service';
 import { SandboxController } from './modules/sandbox/sandbox.controller';
-import { WebhooksController, WebhooksService } from './modules/webhooks/webhooks';
+import { WebhooksController } from './modules/webhooks/webhooks.controller';
+import { WebhooksRepository } from './modules/webhooks/webhooks.repository';
+import { WebhooksService } from './modules/webhooks/webhooks.service';
 
 // ── Feature modules. Dependencies point one way: ledger ← kyb ← fx/payments ← webhooks/reconciliation. ──
 
 @Module({ providers: [LedgerService], controllers: [LedgerController], exports: [LedgerService] })
 export class LedgerModule {}
 
-@Module({ imports: [LedgerModule], providers: [KybService, { provide: KybProvider, useClass: MockKYBProvider }], controllers: [KybController, SandboxController], exports: [KybService] })
+@Module({ imports: [LedgerModule], providers: [KybService, KybRepository, { provide: KybProvider, useClass: MockKYBProvider }], controllers: [KybController, SandboxController], exports: [KybService] })
 export class KybModule {}
 
-@Module({ providers: [AuthService], controllers: [AuthController], exports: [AuthService] })
+@Module({ providers: [AuthService, AuthRepository], controllers: [AuthController], exports: [AuthService, AuthRepository] })
 export class AuthModule {}
 
-@Module({ imports: [KybModule, AuthModule], providers: [CompaniesService], controllers: [CompaniesController] })
+@Module({ imports: [KybModule, AuthModule], providers: [CompaniesService, CompaniesRepository], controllers: [CompaniesController] })
 export class CompaniesModule {}
 
 @Module({ providers: [ComplianceEngine, { provide: SanctionsProvider, useClass: MockSanctionsProvider }], exports: [ComplianceEngine] })
@@ -55,7 +61,7 @@ export class ComplianceEngineModule {}
 @Module({ imports: [ComplianceEngineModule], providers: [BeneficiariesService, BeneficiariesRepository], controllers: [BeneficiariesController] })
 export class BeneficiariesModule {}
 
-@Module({ imports: [KybModule], providers: [FxService, { provide: RateProvider, useClass: MockRateProvider }], controllers: [FxController], exports: [FxService] })
+@Module({ imports: [KybModule], providers: [FxService, QuotesRepository, { provide: RateProvider, useClass: MockRateProvider }], controllers: [FxController], exports: [FxService] })
 export class FxModule {}
 
 @Module({ imports: [LedgerModule, KybModule, ComplianceEngineModule], providers: [PaymentsService, PaymentsRepository], controllers: [PaymentsController], exports: [PaymentsService, PaymentsRepository] })
@@ -67,7 +73,7 @@ export class ComplianceModule {}
 @Module({ providers: [{ provide: PaymentProvider, useClass: MockPaymentProvider }, ProviderSubmissionService], controllers: [SandboxProviderController], exports: [PaymentProvider] })
 export class ProviderModule {}
 
-@Module({ imports: [PaymentsModule], providers: [WebhooksService], controllers: [WebhooksController] })
+@Module({ imports: [PaymentsModule], providers: [WebhooksService, WebhooksRepository], controllers: [WebhooksController] })
 export class WebhooksModule {}
 
 @Module({ imports: [ProviderModule, LedgerModule], providers: [ReconciliationService], controllers: [ReconciliationController], exports: [ReconciliationService] })

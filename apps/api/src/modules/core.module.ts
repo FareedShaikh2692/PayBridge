@@ -5,6 +5,7 @@ import { PrismaService } from '../common/prisma.service';
 import { RateLimitStorage } from '../common/throttler.storage';
 import { CONFIG, loadConfig } from '../config';
 import { AuditController } from './audit/audit.controller';
+import { AuditRepository } from './audit/audit.repository';
 import { AuditService } from './audit/audit.service';
 import { OutboxService } from './outbox/outbox.service';
 
@@ -12,7 +13,7 @@ import { OutboxService } from './outbox/outbox.service';
 @Global()
 @Module({
   controllers: [AuditController],
-  providers: [{ provide: CONFIG, useFactory: () => loadConfig() }, PrismaService, Clock, AuditService, OutboxService, AuthGuard, RateLimitStorage],
+  providers: [{ provide: CONFIG, useFactory: () => loadConfig() }, PrismaService, Clock, AuditRepository, AuditService, OutboxService, AuthGuard, RateLimitStorage],
   exports: [CONFIG, PrismaService, Clock, AuditService, OutboxService, AuthGuard, RateLimitStorage],
 })
 export class CoreModule {}
