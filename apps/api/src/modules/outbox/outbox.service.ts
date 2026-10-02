@@ -29,6 +29,12 @@ export const JOB_NAMES: Record<string, string> = {
 };
 
 export const MAX_ATTEMPTS = 5;
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(message)), ms)));
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 const QUEUE = 'paybridge-events';
 const DEAD_LETTER_QUEUE = 'paybridge-dead-letter';
 const STALE_LOCK_SECONDS = 120;
@@ -165,10 +171,14 @@ export class OutboxService implements OnModuleDestroy {
     if (this.config.QUEUE_DRIVER === 'bullmq') {
       try {
         const queue = await this.getQueue();
-        await queue.add(
-          JOB_NAMES[row.event_type] ?? row.event_type,
-          { outboxId: row.id, eventType: row.event_type, payload: row.payload },
-          { jobId: row.id, attempts: MAX_ATTEMPTS, backoff: { type: 'exponential', delay: 2000 }, removeOnComplete: 1000, removeOnFail: false },
+        await withTimeout(
+          queue.add(
+            JOB_NAMES[row.event_type] ?? row.event_type,
+            { outboxId: row.id, eventType: row.event_type, payload: row.payload },
+            { jobId: row.id, attempts: MAX_ATTEMPTS, backoff: { type: 'exponential', delay: 2000 }, removeOnComplete: 1000, removeOnFail: false },
+          ),
+          4000,
+          'Redis did not accept the job in time',
         );
         await this.prisma.client.outboxEvent.update({ where: { id: row.id }, data: { status: 'PUBLISHED', publishedAt: new Date(), lockedAt: null } });
       } catch (err) {
@@ -214,9 +224,11 @@ export class OutboxService implements OnModuleDestroy {
     this.timers.push(setInterval(() => void this.drain().catch((err) => logger.error({ err: String(err) }, 'outbox poll failed')), this.config.OUTBOX_POLL_MS));
 
     if (this.config.QUEUE_DRIVER === 'bullmq') {
+      // ExpireQuotes, RunReconciliation and friends become BullMQ repeatable jobs.
       await this.startBullWorker();
+      await this.registerJobSchedulers();
     }
-    for (const task of this.scheduled) {
+    for (const task of this.config.QUEUE_DRIVER === 'bullmq' ? [] : this.scheduled) {
       this.timers.push(setInterval(() => void task.fn().catch((err) => logger.error({ task: task.name, err: String(err) }, 'scheduled task failed')), task.everyMs));
     }
     logger.info({ driver: this.config.QUEUE_DRIVER, scheduled: this.scheduled.map((s) => s.name) }, 'background processing started');
@@ -236,7 +248,8 @@ export class OutboxService implements OnModuleDestroy {
     return results;
   }
 
-  private connection() {
+  /** Producer connections fail fast so a Redis outage cannot stall request handling; worker connections must block. */
+  private connection(role: 'producer' | 'worker' = 'worker') {
     const url = new URL(this.config.REDIS_URL!);
     return {
       host: url.hostname,
@@ -244,15 +257,15 @@ export class OutboxService implements OnModuleDestroy {
       username: url.username || undefined,
       password: url.password || undefined,
       tls: url.protocol === 'rediss:' ? {} : undefined,
-      maxRetriesPerRequest: null,
+      ...(role === 'producer' ? { maxRetriesPerRequest: 1, enableOfflineQueue: false, connectTimeout: 2000 } : { maxRetriesPerRequest: null }),
     };
   }
 
   private async getQueue(): Promise<Queue> {
     if (!this.queue) {
       const { Queue } = await import('bullmq');
-      this.queue = new Queue(QUEUE, { connection: this.connection(), prefix: 'paybridge' });
-      this.deadLetter = new Queue(DEAD_LETTER_QUEUE, { connection: this.connection(), prefix: 'paybridge' });
+      this.queue = new Queue(QUEUE, { connection: this.connection('producer'), prefix: this.config.QUEUE_PREFIX });
+      this.deadLetter = new Queue(DEAD_LETTER_QUEUE, { connection: this.connection('producer'), prefix: this.config.QUEUE_PREFIX });
       this.queue.on('error', (err) => logger.error({ err: String(err) }, 'queue error'));
       this.deadLetter.on('error', (err) => logger.error({ err: String(err) }, 'dead-letter queue error'));
     }
@@ -265,17 +278,23 @@ export class OutboxService implements OnModuleDestroy {
     this.worker = new Worker(
       QUEUE,
       async (job) => {
+        if (job.data.scheduled) {
+          const task = this.scheduled.find((s) => s.name === job.data.scheduled);
+          if (!task) throw new Error(`Unknown scheduled task "${job.data.scheduled}"`);
+          await task.fn();
+          return;
+        }
         const handler = this.handlers.get(job.data.eventType);
         if (!handler) throw new Error(`No handler registered for "${job.data.eventType}"`);
         await handler(job.data.payload, { id: job.data.outboxId, attempts: job.attemptsMade + 1 });
       },
-      { connection: this.connection(), prefix: 'paybridge', concurrency: 5 },
+      { connection: this.connection(), prefix: this.config.QUEUE_PREFIX, concurrency: 5 },
     );
     this.worker.on('error', (err) => logger.error({ err: String(err) }, 'worker error'));
     this.worker.on('failed', (job, err) => {
       if (!job) return;
       logger.error({ jobId: job.id, name: job.name, attemptsMade: job.attemptsMade, err: String(err) }, 'job failed');
-      if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+      if (!job.data.scheduled && job.attemptsMade >= (job.opts.attempts ?? 1)) {
         // Dead-letter: keep the payload and the error where an operator can find and re-drive it.
         void this.deadLetter?.add(job.name, { ...job.data, error: String(err), failedAt: new Date().toISOString() }, { jobId: `dl-${job.id}` });
         void this.prisma.client.outboxEvent
@@ -283,6 +302,21 @@ export class OutboxService implements OnModuleDestroy {
           .catch((e) => logger.error({ err: String(e) }, 'failed to mark dead letter'));
       }
     });
+  }
+
+  /** One BullMQ job scheduler per recurring task. Upserting is idempotent, so every instance may call this. */
+  async registerJobSchedulers(): Promise<string[]> {
+    const { Queue } = await import('bullmq');
+    // Scheduler registration uses a blocking connection: it should wait for Redis rather than fail at boot.
+    const queue = new Queue(QUEUE, { connection: this.connection('worker'), prefix: this.config.QUEUE_PREFIX });
+    try {
+      for (const task of this.scheduled) {
+        await queue.upsertJobScheduler(`scheduled:${task.name}`, { every: task.everyMs }, { name: task.name, data: { scheduled: task.name }, opts: { removeOnComplete: 20, removeOnFail: 50 } });
+      }
+      return (await queue.getJobSchedulers()).map((s) => s.key);
+    } finally {
+      await queue.close();
+    }
   }
 
   // ── Operations ──

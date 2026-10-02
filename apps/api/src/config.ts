@@ -17,6 +17,7 @@ const schema = z.object({
   QUEUE_DRIVER: z.enum(['inline', 'bullmq']).default('inline'),
   WORKER_INLINE: bool(true),
   OUTBOX_POLL_MS: z.coerce.number().int().default(1000),
+  QUEUE_PREFIX: z.string().regex(/^[a-z0-9-]{1,40}$/).default('paybridge'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().default(900),
   REFRESH_TTL_DAYS: z.coerce.number().int().default(7),

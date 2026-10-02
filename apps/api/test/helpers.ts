@@ -28,8 +28,16 @@ export interface TestApp {
   close: () => Promise<void>;
 }
 
-export async function createTestApp(): Promise<TestApp> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+/** `env` overrides apply only while this app is being built (configuration is read once, at start-up). */
+export async function createTestApp(options: { env?: Record<string, string>; reset?: boolean } = {}): Promise<TestApp> {
+  const saved = Object.fromEntries(Object.keys(options.env ?? {}).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, options.env ?? {});
+  let moduleRef;
+  try {
+    moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  } finally {
+    for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  }
   const app = moduleRef.createNestApplication({ rawBody: true, logger: false });
   configureApp(app);
   await app.listen(0);
@@ -39,7 +47,7 @@ export async function createTestApp(): Promise<TestApp> {
   config.WEBHOOK_TARGET_URL = url; // the mock provider delivers webhooks to this very server, over HTTP
   const prisma = app.get(PrismaService).client;
   try {
-    await resetDb(app);
+    if (options.reset !== false) await resetDb(app);
   } catch (err) {
     await app.close();
     throw err;

@@ -4,6 +4,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { Observable, finalize } from 'rxjs';
 import { AuthGuard } from './common/auth.guard';
 import { AllExceptionsFilter, EnvelopeInterceptor, RequestContextMiddleware } from './common/http';
+import { RateLimitStorage } from './common/throttler.storage';
 import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { BeneficiariesController } from './modules/beneficiaries/beneficiaries.controller';
@@ -93,9 +94,13 @@ export class OutboxKickInterceptor implements NestInterceptor {
   imports: [
     CoreModule,
     DiscoveryModule,
-    ThrottlerModule.forRoot({
-      throttlers: [{ name: 'default', ttl: 60_000, limit: 300 }],
-      skipIf: () => process.env.RATE_LIMIT_DISABLED === 'true',
+    ThrottlerModule.forRootAsync({
+      inject: [RateLimitStorage],
+      useFactory: (storage: RateLimitStorage) => ({
+        throttlers: [{ name: 'default', ttl: 60_000, limit: 300 }],
+        storage,
+        skipIf: () => process.env.RATE_LIMIT_DISABLED === 'true',
+      }),
     }),
     LedgerModule,
     KybModule,

@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { AuthGuard } from '../common/auth.guard';
 import { Clock } from '../common/clock';
 import { PrismaService } from '../common/prisma.service';
+import { RateLimitStorage } from '../common/throttler.storage';
 import { CONFIG, loadConfig } from '../config';
 import { AuditController } from './audit/audit.controller';
 import { AuditService } from './audit/audit.service';
@@ -11,7 +12,7 @@ import { OutboxService } from './outbox/outbox.service';
 @Global()
 @Module({
   controllers: [AuditController],
-  providers: [{ provide: CONFIG, useFactory: () => loadConfig() }, PrismaService, Clock, AuditService, OutboxService, AuthGuard],
-  exports: [CONFIG, PrismaService, Clock, AuditService, OutboxService, AuthGuard],
+  providers: [{ provide: CONFIG, useFactory: () => loadConfig() }, PrismaService, Clock, AuditService, OutboxService, AuthGuard, RateLimitStorage],
+  exports: [CONFIG, PrismaService, Clock, AuditService, OutboxService, AuthGuard, RateLimitStorage],
 })
 export class CoreModule {}
