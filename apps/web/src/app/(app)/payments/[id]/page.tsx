@@ -4,13 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { use, useState } from 'react';
 import { LedgerTransactionCard } from '@/components/ledger';
-import { Alert, Card, Empty, ErrorNote, Field, Modal, Money, PageHeader, QueryState, Rows, StatusBadge, Timeline, statusTone } from '@/components/ui';
+import { Undo2 } from 'lucide-react';
+import { Alert, Button, Card, Empty, ErrorNote, Field, Modal, Money, PageHeader, QueryState, Rows, StatusBadge, Timeline, statusTone, useToast } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatDateTime, titleCase } from '@/lib/format';
 import type { PaymentDetail } from '@/lib/types';
 
-const TERMINAL = ['PAID', 'FAILED', 'CANCELLED'];
+const TERMINAL = ['PAID', 'FAILED', 'CANCELLED', 'RETURNED'];
 type Action = 'approve' | 'reject' | 'cancel';
 const ACTION_COPY: Record<Action, { title: string; button: string; reasonRequired: boolean; danger: boolean; help: string }> = {
   approve: { title: 'Approve payment', button: 'Approve', reasonRequired: false, danger: false, help: 'Once approved and clear of compliance, the payment is captured and sent to the mock provider.' },
@@ -18,17 +19,34 @@ const ACTION_COPY: Record<Action, { title: string; button: string; reasonRequire
   cancel: { title: 'Cancel payment', button: 'Cancel payment', reasonRequired: false, danger: true, help: 'The payment is cancelled and the reserved funds return to the wallet. This cannot be undone.' },
 };
 
+/** Rule inputs as readable "label value" pairs rather than raw JSON. */
+function DetailList({ value }: { value: Record<string, unknown> }) {
+  const entries = Object.entries(value).filter(([k]) => k !== 'rescreen');
+  return (
+    <span className="flex flex-wrap gap-x-3 gap-y-0.5">
+      {value.rescreen ? <span className="font-medium text-info">Re-screen</span> : null}
+      {entries.map(([k, v]) => (
+        <span key={k} className="whitespace-nowrap">
+          {titleCase(k.replace(/([a-z])([A-Z])/g, '$1_$2'))}: <span className="num font-medium text-foreground">{typeof v === 'object' && v !== null ? (Array.isArray(v) ? v.join(', ') : Object.entries(v).map(([a, b]) => `${a} ${b}`).join(', ')) : String(v)}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export default function PaymentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { me, can } = useAuth();
   const qc = useQueryClient();
   const [action, setAction] = useState<Action | null>(null);
   const [reason, setReason] = useState('');
+  const [awaitingReturn, setAwaitingReturn] = useState(false);
+  const toast = useToast();
   const query = useQuery({
     queryKey: ['payment', id],
     queryFn: () => api.get<PaymentDetail>(`/payments/${id}`),
     // Follow the payment while it is still moving.
-    refetchInterval: (q) => (q.state.data && !TERMINAL.includes(q.state.data.status) ? 2_000 : false),
+    refetchInterval: (q) => (q.state.data && (!TERMINAL.includes(q.state.data.status) || (awaitingReturn && q.state.data.status === 'PAID')) ? 2_000 : false),
   });
   const act = useMutation({
     mutationFn: () => api.post<PaymentDetail>(`/payments/${id}/${action}`, reason.trim() ? { reason: reason.trim() } : {}),
@@ -38,6 +56,16 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       setAction(null);
       setReason('');
+      toast(action === 'approve' ? 'Payment approved.' : action === 'reject' ? 'Payment rejected.' : 'Payment cancelled.');
+    },
+  });
+  // Sandbox control: ask the mock provider to return a paid payout. The refund then arrives by webhook.
+  const simulateReturn = useMutation({
+    mutationFn: () => api.post(`/sandbox/provider/payments/${id}/return`, {}),
+    onSuccess: () => {
+      setAwaitingReturn(true);
+      toast('Return requested. The provider will confirm by webhook.', 'info');
+      qc.invalidateQueries({ queryKey: ['payment', id] });
     },
   });
   const open = (a: Action) => { act.reset(); setReason(''); setAction(a); };
@@ -66,6 +94,11 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
                   )}
                   {canCancel && <button className="btn-secondary" onClick={() => open('cancel')}>Cancel payment</button>}
                   {me?.isPlatformAdmin && p.complianceStatus === 'REVIEW' && <Link href="/admin/compliance" className="btn-primary">Open compliance queue</Link>}
+                  {me?.isPlatformAdmin && p.status === 'PAID' && (
+                    <Button variant="secondary" icon={Undo2} loading={simulateReturn.isPending || awaitingReturn} loadingLabel="Returning…" onClick={() => simulateReturn.mutate()} data-testid="simulate-return">
+                      Simulate provider return
+                    </Button>
+                  )}
                 </>
               }
             />
@@ -78,6 +111,8 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
             </div>
 
             {canApprove && isCreator && <div className="mb-4"><Alert tone="info" title="Waiting for a second person">You created this payment, so someone else must approve it.</Alert></div>}
+            <ErrorNote error={simulateReturn.error} />
+            {p.status === 'RETURNED' && <div className="mb-4"><Alert tone="warn" title="The payout was returned by the provider">Reason: <span className="num">{p.failureReason}</span>. The capture was reversed by new ledger postings and AED {p.totalDebitAmount} returned to the wallet, fee included.</Alert></div>}
             {p.status === 'FAILED' && <div className="mb-4"><Alert tone="bad" title="The payout failed">Provider reason: <span className="num">{p.failureReason}</span>. The capture was reversed and AED {p.totalDebitAmount} returned to the wallet, fee included.</Alert></div>}
             {p.status === 'CANCELLED' && <div className="mb-4"><Alert tone="neutral" title={`Cancelled — ${titleCase(p.cancellationReason ?? 'cancelled')}`}>Any reserved funds were released back to the wallet.</Alert></div>}
 
@@ -125,7 +160,7 @@ export default function PaymentPage({ params }: { params: Promise<{ id: string }
                             <td>{c.ruleName}<p className="num text-xs text-ink-faint">{c.ruleCode}</p></td>
                             <td><StatusBadge value={c.outcome} label={c.ruleCode === 'MANUAL_DECISION' ? (c.outcome === 'CLEAR' ? 'Cleared' : 'Rejected') : c.triggered ? `Triggered — ${c.outcome.toLowerCase()}` : 'Not triggered'} /></td>
                             <td className="text-xs text-ink-muted">
-                              {c.ruleCode === 'MANUAL_DECISION' ? <>{c.decidedByName}: “{c.decisionNote}”</> : c.details ? <span className="num break-all">{JSON.stringify(c.details)}</span> : 'Screening detail is held by the platform'}
+                              {c.ruleCode === 'MANUAL_DECISION' ? <>{c.decidedByName}: “{c.decisionNote}”</> : c.details ? <DetailList value={c.details} /> : 'Screening detail is held by the platform'}
                             </td>
                           </tr>
                         ))}

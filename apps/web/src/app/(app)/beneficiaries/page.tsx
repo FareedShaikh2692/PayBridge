@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import { Card, Empty, PageHeader, Pagination, QueryState, StatusBadge } from '@/components/ui';
+import { Users } from 'lucide-react';
+import { Card, EmptyState, PageHeader, Pagination, QueryState, StatusBadge } from '@/components/ui';
 import { api, qs } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatDate } from '@/lib/format';
@@ -40,7 +41,7 @@ function List() {
         <QueryState query={query}>
           {(data) =>
             data.items.length === 0 ? (
-              <Empty title="No beneficiaries found">{can('beneficiary.create') && <Link className="link" href="/beneficiaries/new">Add one</Link>}</Empty>
+              <EmptyState icon={Users} title="No beneficiaries found" action={can('beneficiary.create') && <Link className="btn-primary" href="/beneficiaries/new">Add beneficiary</Link>}>Beneficiaries are the Indian payees your company sends to.</EmptyState>
             ) : (
               <>
                 <div className="table-wrap">

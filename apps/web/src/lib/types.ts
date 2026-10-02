@@ -138,6 +138,7 @@ export interface Kyb {
   verificationResult: { provider: string; result: string; riskLevel: string; reasons: string[]; checkedAt: string } | null;
   rejectionReason: string | null;
   expiresAt: string | null;
+  documents: { id: string; documentType: string; fileName: string; checksum: string | null; sizeBytes: number | null; createdAt: string }[];
 }
 
 export interface Balance {

@@ -3,7 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState } from 'react';
-import { Badge, Card, Empty, ErrorNote, Field, Modal, Money, PageHeader, QueryState, Rows, StatusBadge } from '@/components/ui';
+import { RefreshCw } from 'lucide-react';
+import { Badge, Button, Card, Empty, ErrorNote, Field, Modal, Money, PageHeader, QueryState, Rows, StatusBadge, useToast } from '@/components/ui';
 import { api } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 
@@ -34,6 +35,7 @@ export default function CompliancePage() {
   const qc = useQueryClient();
   const [item, setItem] = useState<QueueItem | null>(null);
   const [reason, setReason] = useState('');
+  const toast = useToast();
   const queue = useQuery({ queryKey: ['compliance-queue'], queryFn: () => api.page<QueueItem>('/admin/compliance-queue?pageSize=50'), refetchInterval: 10_000 });
   const rules = useQuery({ queryKey: ['compliance-rules'], queryFn: () => api.get<Rule[]>('/admin/compliance/rules') });
   const decide = useMutation({
@@ -41,6 +43,13 @@ export default function CompliancePage() {
     onSuccess: () => {
       qc.invalidateQueries();
       setItem(null);
+    },
+  });
+  const rescreen = useMutation({
+    mutationFn: (paymentId: string) => api.post(`/admin/compliance/${paymentId}/rescreen`, {}),
+    onSuccess: () => {
+      toast('Re-screen queued. The rules will be evaluated again.', 'info');
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['compliance-queue'] }), 2500);
     },
   });
   const toggle = useMutation({
@@ -69,7 +78,10 @@ export default function CompliancePage() {
                         <td className="text-right"><Money value={q.sourceAmount} currency={q.sourceCurrency} strong /></td>
                         <td><div className="flex flex-wrap gap-1">{q.rulesFired.map((r) => <Badge key={r.ruleCode} tone="warn" title={JSON.stringify(r.details)}>{r.ruleName}</Badge>)}</div></td>
                         <td><StatusBadge value={q.approvalStatus} /></td>
-                        <td className="text-right"><button className="btn-primary" onClick={() => { decide.reset(); setReason(''); setItem(q); }}>Decide</button></td>
+                        <td className="whitespace-nowrap text-right">
+                          <Button variant="ghost" size="sm" icon={RefreshCw} loading={rescreen.isPending && rescreen.variables === q.paymentId} onClick={() => rescreen.mutate(q.paymentId)}>Re-screen</Button>{' '}
+                          <button className="btn-primary" onClick={() => { decide.reset(); setReason(''); setItem(q); }}>Decide</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -82,7 +94,7 @@ export default function CompliancePage() {
 
       <div className="mt-6">
         <Card title="Rules" padded={false}>
-          <ErrorNote error={toggle.error} />
+          <ErrorNote error={toggle.error ?? rescreen.error} />
           <QueryState query={rules}>
             {(list) => (
               <div className="table-wrap">

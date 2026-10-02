@@ -17,7 +17,7 @@ test('demo scenario: onboarding to a reconciled payment', async ({ page }) => {
     await page.goto('/register');
     await expect(page.getByTestId('sandbox-banner')).toContainText('No Real Money Movement');
     await page.getByLabel('Full name').fill('Aisha Khan');
-    await page.getByLabel('Email').fill(admin);
+    await page.getByLabel('Email address').fill(admin);
     await page.getByLabel('Password', { exact: true }).fill(NEW_PASSWORD);
     await page.getByLabel('Confirm password').fill(NEW_PASSWORD);
     await page.getByRole('button', { name: 'Create account' }).click();

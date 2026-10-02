@@ -6,14 +6,14 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { ErrorNote, Field } from '@/components/ui';
+import { Button, ErrorNote, Field, Input } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 const schema = z
   .object({
     fullName: z.string().trim().min(2, 'Enter your name').max(120),
-    email: z.string().email('Enter a valid email address'),
+    email: z.string().min(1, 'Enter an email address').email('Enter a valid email address'),
     password: z.string().min(12, 'Use at least 12 characters').max(128),
     confirm: z.string(),
   })
@@ -25,6 +25,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState<unknown>(null);
   const { register, handleSubmit, formState } = useForm<Form>({ resolver: zodResolver(schema) });
+  const e = formState.errors;
 
   const submit = handleSubmit(async (values) => {
     setError(null);
@@ -38,32 +39,30 @@ export default function RegisterPage() {
   });
 
   return (
-    <div className="card p-6">
-      <h1>Create an account</h1>
-      <p className="mt-1 text-ink-muted">Next you will register a company and submit it for simulated KYB.</p>
-      <form onSubmit={submit} className="mt-5 space-y-4" noValidate>
-        <Field label="Full name" htmlFor="fullName" error={formState.errors.fullName?.message}>
-          <input id="fullName" autoComplete="name" className="input" {...register('fullName')} />
+    <div>
+      <h1 className="text-[28px] leading-tight">Create an account</h1>
+      <p className="mt-2 text-muted-foreground">Next you will register a company and submit it for simulated KYB.</p>
+      <form onSubmit={submit} className="mt-8 space-y-5" noValidate>
+        <Field label="Full name" htmlFor="fullName" error={e.fullName?.message}>
+          <Input id="fullName" autoComplete="name" invalid={Boolean(e.fullName)} {...register('fullName')} />
         </Field>
-        <Field label="Email" htmlFor="email" error={formState.errors.email?.message} hint="Use a made-up address such as you@example.test — no email is ever sent.">
-          <input id="email" type="email" autoComplete="username" className="input" {...register('email')} />
+        <Field label="Email address" htmlFor="email" error={e.email?.message} hint="Use a made-up address such as you@example.test. No email is ever sent.">
+          <Input id="email" type="email" autoComplete="username" invalid={Boolean(e.email)} {...register('email')} />
         </Field>
-        <Field label="Password" htmlFor="password" error={formState.errors.password?.message} hint="At least 12 characters. Do not reuse a real password.">
-          <input id="password" type="password" autoComplete="new-password" className="input" {...register('password')} />
+        <Field label="Password" htmlFor="password" error={e.password?.message} hint="At least 12 characters. Do not reuse a real password.">
+          <Input id="password" type="password" autoComplete="new-password" invalid={Boolean(e.password)} {...register('password')} />
         </Field>
-        <Field label="Confirm password" htmlFor="confirm" error={formState.errors.confirm?.message}>
-          <input id="confirm" type="password" autoComplete="new-password" className="input" {...register('confirm')} />
+        <Field label="Confirm password" htmlFor="confirm" error={e.confirm?.message}>
+          <Input id="confirm" type="password" autoComplete="new-password" invalid={Boolean(e.confirm)} {...register('confirm')} />
         </Field>
         <ErrorNote error={error} />
-        <button type="submit" className="btn-primary w-full" disabled={formState.isSubmitting}>
-          {formState.isSubmitting ? 'Creating account…' : 'Create account'}
-        </button>
+        <Button type="submit" size="lg" className="w-full" loading={formState.isSubmitting} loadingLabel="Creating account…">
+          Create account
+        </Button>
       </form>
-      <p className="mt-4 text-ink-muted">
+      <p className="mt-8 text-muted-foreground">
         Already registered?{' '}
-        <Link href="/login" className="link">
-          Sign in
-        </Link>
+        <Link href="/login" className="link">Sign in</Link>
       </p>
     </div>
   );

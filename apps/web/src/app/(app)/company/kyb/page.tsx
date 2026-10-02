@@ -2,10 +2,12 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Alert, Card, ErrorNote, PageHeader, QueryState, Rows, StatusBadge } from '@/components/ui';
+import { FileText, Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Alert, Button, Card, EmptyState, ErrorNote, PageHeader, QueryState, Rows, Select, StatusBadge, useToast } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { formatDate, formatDateTime } from '@/lib/format';
+import { formatDate, formatDateTime, titleCase } from '@/lib/format';
 import type { Kyb } from '@/lib/types';
 
 const STEPS = ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED'];
@@ -17,6 +19,78 @@ const HELP: Record<string, string> = {
   REJECTED: 'Rejected. Correct the company details to reopen the profile, then submit again.',
   EXPIRED: 'The trade licence has lapsed. Update the licence details to reopen the profile, then submit again.',
 };
+
+const DOCUMENT_TYPES = ['TRADE_LICENSE', 'MEMORANDUM_OF_ASSOCIATION', 'OWNER_ID', 'PROOF_OF_ADDRESS', 'OTHER'];
+
+/**
+ * KYB documents, metadata only. The chosen file never leaves the browser: its SHA-256 is computed locally and
+ * only the name, size and checksum are recorded.
+ */
+function Documents({ kyb, canEdit }: { kyb: Kyb; canEdit: boolean }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const input = useRef<HTMLInputElement>(null);
+  const [type, setType] = useState(DOCUMENT_TYPES[0]);
+  const open = ['DRAFT', 'REJECTED', 'EXPIRED'].includes(kyb.status);
+  const add = useMutation({
+    mutationFn: async (file: File) => {
+      const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+      const checksum = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      const fileName = file.name.replace(/[^\w .()-]/g, '_').slice(0, 200) || 'document';
+      return api.post('/kyb/documents', { documentType: type, fileName, checksum, sizeBytes: file.size });
+    },
+    onSuccess: () => {
+      toast('Document recorded.');
+      qc.invalidateQueries({ queryKey: ['kyb'] });
+    },
+    onSettled: () => {
+      if (input.current) input.current.value = '';
+    },
+  });
+  return (
+    <Card title="Supporting documents" padded={false} actions={<span className="text-xs text-muted-foreground">Metadata only — files are never uploaded</span>}>
+      {kyb.documents.length === 0 ? (
+        <EmptyState icon={FileText} title="No documents recorded">Add a trade licence or other supporting document before submitting. Use a dummy file: only its name, size and checksum are kept.</EmptyState>
+      ) : (
+        <div className="table-wrap">
+          <table className="table" data-testid="kyb-documents">
+            <thead><tr><th>Document</th><th>File</th><th className="text-right">Size</th><th>Checksum (SHA-256)</th><th>Added</th></tr></thead>
+            <tbody>
+              {kyb.documents.map((d) => (
+                <tr key={d.id}>
+                  <td className="font-medium">{titleCase(d.documentType)}</td>
+                  <td>{d.fileName}</td>
+                  <td className="num text-right">{d.sizeBytes !== null ? `${Math.max(1, Math.round(d.sizeBytes / 1024))} KB` : '—'}</td>
+                  <td className="num text-xs text-muted-foreground">{d.checksum ? `${d.checksum.slice(0, 16)}…` : '—'}</td>
+                  <td className="whitespace-nowrap text-muted-foreground">{formatDateTime(d.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {canEdit && (
+        <div className="border-t border-border p-4">
+          {open ? (
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="label" htmlFor="doc-type">Document type</label>
+                <Select id="doc-type" value={type} onChange={(e) => setType(e.target.value)} className="!w-64">
+                  {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{titleCase(t)}</option>)}
+                </Select>
+              </div>
+              <input ref={input} type="file" className="sr-only" id="doc-file" aria-label="Choose a document" onChange={(e) => e.target.files?.[0] && add.mutate(e.target.files[0])} />
+              <Button variant="secondary" icon={Upload} loading={add.isPending} loadingLabel="Recording…" onClick={() => input.current?.click()}>Choose file</Button>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">Documents can be added only while the profile is in draft.</p>
+          )}
+          <ErrorNote error={add.error} />
+        </div>
+      )}
+    </Card>
+  );
+}
 
 export default function KybPage() {
   const { me, can, reload } = useAuth();
@@ -37,6 +111,7 @@ export default function KybPage() {
         {(k) => {
           const stepIndex = STEPS.indexOf(k.status);
           return (
+            <div className="space-y-6">
             <div className="grid gap-6 lg:grid-cols-3">
               <Card title="Status" className="lg:col-span-2">
                 <ol className="mb-4 flex flex-wrap gap-2" aria-label="KYB progress">
@@ -84,6 +159,8 @@ export default function KybPage() {
                   </div>
                 )}
               </Card>
+            </div>
+            <Documents kyb={k} canEdit={can('kyb.submit')} />
             </div>
           );
         }}

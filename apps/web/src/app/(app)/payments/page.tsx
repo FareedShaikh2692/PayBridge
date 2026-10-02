@@ -5,7 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import { Card, Empty, Money, PageHeader, Pagination, QueryState, StatusBadge } from '@/components/ui';
+import { Send } from 'lucide-react';
+import { Card, EmptyState, Money, PageHeader, Pagination, QueryState, StatusBadge } from '@/components/ui';
 import { api, qs } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatDateTime, titleCase } from '@/lib/format';
@@ -64,7 +65,9 @@ function List() {
         <QueryState query={query}>
           {(data) =>
             data.items.length === 0 ? (
-              <Empty title="No payments match these filters" />
+              <EmptyState icon={Send} title={status || awaiting || from || to ? 'No payments match these filters' : 'No payments yet'} action={can('payment.create') && <Link href="/payments/new" className="btn-primary">Create payment</Link>}>
+                {status || awaiting || from || to ? 'Try clearing a filter.' : 'Once you create a simulated payment, your transaction history will appear here.'}
+              </EmptyState>
             ) : (
               <>
                 <div className="table-wrap">

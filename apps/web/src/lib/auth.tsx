@@ -2,7 +2,7 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { api, onSessionLost, refreshSession, setAccessToken } from './api';
+import { api, onSessionLost, refreshSession, setAccessToken, setSessionHint } from './api';
 import type { Me } from './types';
 
 interface AuthState {
@@ -50,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (email: string, password: string) => {
       const res = await api.post<{ accessToken: string }>('/auth/login', { email, password }, { noRetry: true });
       setAccessToken(res.accessToken);
+      setSessionHint(true);
       queryClient.clear();
       const next = await reload();
       if (!next) throw new Error('Could not load your profile.');
@@ -63,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await api.post('/auth/logout', {}, { noRetry: true });
     } finally {
       setAccessToken(null);
+      setSessionHint(false);
       setMe(null);
       queryClient.clear();
     }

@@ -51,12 +51,37 @@ export function onSessionLost(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
+/**
+ * A non-secret hint that this browser has signed in before. It holds no credential — the refresh token is an
+ * HttpOnly cookie — and only saves a pointless request (and a 401 in the console) for first-time visitors.
+ */
+const SESSION_HINT = 'paybridge.session';
+export function setSessionHint(present: boolean): void {
+  try {
+    if (present) window.localStorage.setItem(SESSION_HINT, '1');
+    else window.localStorage.removeItem(SESSION_HINT);
+  } catch {
+    /* storage unavailable: the hint is only an optimisation */
+  }
+}
+function hasSessionHint(): boolean {
+  try {
+    return window.localStorage.getItem(SESSION_HINT) === '1';
+  } catch {
+    return true;
+  }
+}
+
 /** Exchanges the refresh cookie for a new access token. Concurrent callers share one request. */
 export function refreshSession(): Promise<boolean> {
+  if (!hasSessionHint()) return Promise.resolve(false);
   refreshInFlight ??= (async () => {
     try {
       const res = await fetch('/api/v1/auth/refresh', { method: 'POST', credentials: 'same-origin' });
-      if (!res.ok) return false;
+      if (!res.ok) {
+        if (res.status === 401) setSessionHint(false);
+        return false;
+      }
       const json = await res.json();
       accessToken = json.data.accessToken;
       return true;

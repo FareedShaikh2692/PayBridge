@@ -1,16 +1,43 @@
+import { ArrowLeftRight, BookOpenCheck, Scale, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
+import { Logo } from '@/components/brand';
+
+const POINTS = [
+  [ArrowLeftRight, 'FX', 'Locked AED → INR quotes with transparent spread and fee'],
+  [ShieldCheck, 'Compliance', 'Rules, review queue and maker-checker approval'],
+  [BookOpenCheck, 'Ledger', 'Double entry, append-only, balanced in every currency'],
+  [Scale, 'Reconciliation', 'Payment, provider and ledger matched three ways'],
+] as const;
+
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <main className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-md flex-col justify-center px-4 py-10">
-      <div className="mb-6 flex items-center gap-2">
-        <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-md bg-ink text-sm font-bold text-white">
-          PB
-        </span>
-        <span className="text-lg font-semibold tracking-tight">PayBridge</span>
-      </div>
-      {children}
-      <p className="mt-6 text-xs text-ink-faint">
-        PayBridge is a learning project. It is not a bank or a licensed payment service, it moves no money, and nothing entered here should be real financial or identity data.
-      </p>
-    </main>
+    <div className="grid min-h-[calc(100vh-30px)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+      {/* Brand panel: a continuation of the landing page. Hidden on small screens, where the form comes first. */}
+      <aside className="relative hidden overflow-hidden bg-navy-900 p-12 text-white lg:flex lg:flex-col lg:justify-between">
+        <div aria-hidden="true" className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] [background-size:32px_32px] [mask-image:linear-gradient(to_bottom,black,transparent_85%)]" />
+        <Link href="/" className="relative w-fit rounded-md" aria-label="PayBridge home"><Logo tone="light" /></Link>
+        <div className="relative max-w-md">
+          <p className="text-3xl font-semibold leading-tight tracking-tight">Cross-border payment engineering, simplified.</p>
+          <ul className="mt-10 space-y-5">
+            {POINTS.map(([Icon, title, text]) => (
+              <li key={title} className="flex gap-4">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/5"><Icon aria-hidden="true" className="h-[18px] w-[18px]" /></span>
+                <div>
+                  <p className="font-semibold">{title}</p>
+                  <p className="text-sm text-white/65">{text}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="relative text-xs text-white/55">A learning project. Not a bank or a licensed payment service; it moves no money.</p>
+      </aside>
+
+      <main className="flex flex-col px-5 py-8 sm:px-8">
+        <Link href="/" className="w-fit rounded-md lg:hidden" aria-label="PayBridge home"><Logo /></Link>
+        <div className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center py-8">{children}</div>
+        <p className="text-center text-xs text-muted-foreground">Educational environment · No real money movement · Do not enter real financial or identity data</p>
+      </main>
+    </div>
   );
 }

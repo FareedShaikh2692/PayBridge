@@ -9,7 +9,7 @@ export const unique = () => `${Date.now().toString(36)}${Math.floor(Math.random(
 
 export async function login(page: Page, email: string, password: string) {
   await page.goto('/login');
-  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Email address').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByTestId('user-name')).toBeVisible();
@@ -17,7 +17,7 @@ export async function login(page: Page, email: string, password: string) {
 
 export async function logout(page: Page) {
   await page.getByRole('button', { name: 'Sign out' }).click();
-  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
 }
 
 export async function addBeneficiary(page: Page, name: string) {

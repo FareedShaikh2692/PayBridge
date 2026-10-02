@@ -72,26 +72,28 @@ These are published on purpose: it is a sandbox. On the hosted demo anyone can s
 2. Sign in as the **Approver** → open the payment → *Approve*. Watch it move to *Processing* and then *Paid* as the mock provider's webhooks arrive, with hold, capture and settlement in the ledger panel.
 3. Sign in as the **Platform admin** → *Reconciliation* → *Run reconciliation*: the payment is `MATCHED`. Inspect webhooks, the trial balance and the audit log.
 
+A platform admin can also re-screen a held payment from the compliance queue and simulate the provider returning a paid payout (refund flow) from the payment page.
+
 Test tokens in a beneficiary name change the outcome: `TEST-FAIL` (payout fails and is refunded), `TEST-PEP` (compliance review), `TEST-SANCTION` (blocked), `TEST-DUPLICATE-WEBHOOK`, `TEST-OUT-OF-ORDER`, `TEST-TIMEOUT`. An amount above AED 50,000 goes to compliance review.
 
 ## Tests
 
 | Suite | Count | Command |
 |---|---:|---|
-| Shared domain (unit + property) | 30 | `pnpm --filter @paybridge/shared test` |
+| Shared domain (unit + property) | 32 | `pnpm --filter @paybridge/shared test` |
 | API unit | 26 | `pnpm --filter @paybridge/api test:unit` |
-| API integration (real PostgreSQL) | 146 | `pnpm test:int` |
-| Browser end-to-end (Playwright) | 6 | `pnpm test:e2e` |
+| API integration (real PostgreSQL) | 156 | `pnpm test:int` |
+| Browser end-to-end (Playwright), incl. accessibility and responsive checks | 14 | `pnpm test:e2e` |
 
 All pass locally. The integration suite covers the eight mandatory invariants: every ledger transaction balances; debits equal credits; no expired quote can be used; no quote is used twice; no payment is processed twice; a duplicate webhook does not duplicate ledger entries; a duplicate `Idempotency-Key` does not create a second payment; Company A cannot reach Company B's data. Details in [docs/TESTING.md](docs/TESTING.md).
 
 ## Known limitations
 
 - The Docker Compose path and the GitHub Actions workflow are written but have not been run.
-- Rate limiting is in-memory (per instance). Row-level security and a restricted database role are designed, not built.
-- `RunComplianceChecks` as an asynchronous re-screening job is not built; rules run synchronously at payment creation.
-- KYB documents (metadata) and the refund-after-paid flow are schema-only.
-- No MFA, password reset or email. No dark mode. No load testing.
+- Rate limiting shares counters through Redis when it is configured and is per-instance otherwise (as on Vercel). Row-level security and a restricted database role are designed, not built.
+- Compliance, ledger, reconciliation and dashboard services still query the database directly; the other modules have repositories.
+- KYB documents record metadata only; no file is stored.
+- No MFA, password reset or email. Light theme only. No load testing.
 - On Vercel there are no BullMQ workers; the Postgres-backed inline queue is used instead.
 
 ## Repository
@@ -119,6 +121,7 @@ docs            design documents
 | [SECURITY](docs/SECURITY.md) | Authentication, authorisation, tenant isolation, threat model, known gaps |
 | [RECONCILIATION](docs/RECONCILIATION.md) | Three-way matching and reason codes |
 | [TESTING](docs/TESTING.md) · [DEPLOYMENT](docs/DEPLOYMENT.md) | What is tested and how to run and deploy it |
+| [DESIGN](docs/DESIGN.md) | Design tokens, components and UI checks |
 | [IMPLEMENTATION-PLAN](docs/IMPLEMENTATION-PLAN.md) · [BACKLOG](docs/BACKLOG.md) | Original plan and prioritised backlog |
 
 ## Stack

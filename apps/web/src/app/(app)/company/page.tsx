@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { Alert, Card, ErrorNote, Field, Loading, Money, PageHeader, Rows, StatusBadge } from '@/components/ui';
+import { Alert, Card, ErrorNote, Field, Loading, Money, PageHeader, Rows, StatusBadge, useToast } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { formatDate } from '@/lib/format';
@@ -85,9 +85,13 @@ function CompanyForm({ company, onSaved }: { company: Company | null; onSaved: (
 function TopUp({ companyId }: { companyId: string }) {
   const qc = useQueryClient();
   const [amount, setAmount] = useState('100000.00');
+  const toast = useToast();
   const topup = useMutation({
     mutationFn: () => api.post('/sandbox/wallet/topup', { amount }, { idempotencyKey: crypto.randomUUID() }),
-    onSuccess: () => qc.invalidateQueries(),
+    onSuccess: () => {
+      toast('Wallet topped up (simulated).');
+      qc.invalidateQueries();
+    },
   });
   return (
     <form
