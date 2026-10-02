@@ -2,14 +2,27 @@
 
 > **Educational Sandbox — No Real Money Movement.**
 
-Status: this is the plan. No tests exist yet; each phase adds the suites listed for it and this document is updated with what actually runs.
+## Status — what runs today
+
+| Suite | Count | Command | Last result |
+|---|---:|---|---|
+| Shared domain unit tests (incl. 1,000-case property test) | 30 | `pnpm --filter @paybridge/shared test` | pass |
+| API unit tests | 26 | `pnpm --filter @paybridge/api test:unit` | pass |
+| API integration tests against real PostgreSQL | 146 | `pnpm test:int` | pass |
+| Browser end-to-end (Playwright, Chromium) | 6 | `pnpm test:e2e` | pass locally; the demo scenario also passes against the Vercel deployment |
+
+Integration suites: `lifecycle` (demo path, I5, I6, failure and webhook cases, compliance and maker-checker), `payments` (I3, I4, I7, funds, atomicity), `ledger` (I1, I2, immutability, double entry), `tenant-isolation` (I8), `auth` (authentication, RBAC sweep, conventions), `reconciliation` (one fixture per reason code), `onboarding` (company, KYB, beneficiaries, quotes).
+
+Not covered: load/performance testing, the Docker images (built in CI only; Docker is not installed on the development machine), database- and Redis-outage tests at the HTTP level (error mapping is unit-tested; the readiness endpoint and outbox retry are exercised), accessibility scanning with axe, and coverage thresholds (not enforced).
+
+The sections below were written as the plan and remain the reference for what each suite is for.
 
 ## 1. Test levels
 
 | Level | Tooling | Scope | Runs against |
 |---|---|---|---|
 | Unit | Jest | Pure domain: `Money`, quote formulas, state machines, compliance rules, ledger validation, signature verification, masking | Nothing external |
-| Integration | Jest + Supertest | HTTP → service → real PostgreSQL and Redis; transactions, constraints, triggers, locks | Disposable Postgres/Redis (Compose service or Testcontainers) |
+| Integration | Jest + Supertest | HTTP → service → real PostgreSQL; transactions, constraints, triggers, locks (inline queue driver, so no Redis) | A disposable `paybridge_test` database |
 | Invariant | Jest (+ fast-check) | The eight mandatory financial invariants, under concurrency and random inputs | Real PostgreSQL |
 | E2E | Playwright | Browser flows through the web app | Full stack, seeded |
 | Static | TypeScript strict, ESLint, `prisma validate`, gitleaks, `pnpm audit` | Whole repo | — |

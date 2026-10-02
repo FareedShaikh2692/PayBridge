@@ -4,7 +4,7 @@
 
 ## 1. System architecture
 
-A modular monolith: one NestJS API process, one worker process (same codebase, different entry point), one Next.js web app, PostgreSQL and Redis. Module boundaries follow the domain so that any module could later be extracted, but a monolith keeps financial writes inside single database transactions — which is the property that matters most here.
+A modular monolith: one NestJS API process, an optional worker process (same codebase, different entry point), one Next.js web app, PostgreSQL and — for the BullMQ queue driver — Redis. Module boundaries follow the domain so that any module could later be extracted, but a monolith keeps financial writes inside single database transactions — which is the property that matters most here.
 
 ```mermaid
 flowchart TB
@@ -131,18 +131,29 @@ sequenceDiagram
 ### 5.1 Transactional outbox
 State changes that need follow-up work write a row to `outbox_events` in the same transaction. The relay (in the worker) polls with `FOR UPDATE SKIP LOCKED`, enqueues to BullMQ using the outbox id as `jobId` (so a re-publish is de-duplicated), then marks the row published. If Redis is down the API keeps accepting payments; work drains when Redis returns.
 
+### 5.1a Two queue drivers
+
+The outbox table is the source of truth for follow-up work; what executes it is configurable with `QUEUE_DRIVER`:
+
+| Driver | How jobs run | Needs | Used for |
+|---|---|---|---|
+| `bullmq` | The relay publishes each outbox row to BullMQ (`jobId` = outbox id); Redis-backed workers execute it | Redis, a long-lived process | Docker Compose, any server deployment |
+| `inline` | The outbox row *is* the job: claimed with `SKIP LOCKED`, executed in-process, retried with exponential backoff, marked `FAILED` (dead-lettered) after five attempts | PostgreSQL only | Local development without Redis, the test suites, and serverless (Vercel), where no worker process can exist |
+
+Both drivers run the same idempotent handlers with the same retry policy. On serverless the drain is started after each state-changing request with `waitUntil`, and a daily cron (`/api/v1/internal/cron`, protected by `CRON_SECRET`) runs the scheduled tasks and drains anything left behind.
+
 ### 5.2 Queues and jobs
 
 | Queue | Job | Trigger | Idempotency |
 |---|---|---|---|
-| `payments` | `ProcessPayment` | `payment.approved` outbox event | State guard `APPROVED → PROCESSING`; capture posting key |
-| `payments` | `RetryFailedProviderRequest` | Provider submission error | Provider idempotency key = payment id |
-| `webhooks` | `ProcessWebhooks` | Webhook stored | `webhook_events.status`; ledger posting key |
-| `compliance` | `RunComplianceChecks` | Re-screen request, provider timeout | Check rows keyed by (payment, rule, run) |
-| `quotes` | `ExpireQuotes` | Repeatable, every 15 s | `UPDATE … WHERE status = ACTIVE AND expires_at < now()` |
-| `reconciliation` | `RunReconciliation` | Repeatable hourly, or manual | New run row each time |
+| events | `ProcessPayment` | `payment.approved` outbox event | State guard `APPROVED → PROCESSING`; capture posting key |
+| events | `RetryFailedProviderRequest` | `provider.submit` outbox event (first attempt and every retry) | Provider idempotency key = payment id |
+| events | `ProcessWebhooks` | Webhook stored | `webhook_events.status`; ledger posting key |
+| — | `RunComplianceChecks` | **Not built.** Rules run synchronously at payment creation (A8); the asynchronous re-screen job is P1 | — |
+| scheduled | `ExpireQuotes` | Timer every 15 s (cron on serverless) | `UPDATE … WHERE status = ACTIVE AND expires_at < now()` |
+| scheduled / events | `RunReconciliation` | Timer hourly (cron on serverless), or manual via the API | New run row each time |
 
-Retry policy: 5 attempts, exponential backoff starting at 2 s with jitter (2, 4, 8, 16, 32 s). **Dead-letter handling:** a job that exhausts its attempts stays in BullMQ's failed set and a `failed` listener copies it into a `dead-letter` queue with the original payload, error and attempt count; an admin endpoint lists and re-drives them. A dead-lettered `ProcessPayment` leaves the payment in its current state — it is never auto-failed, because the provider's state is unknown — and reconciliation surfaces it as `REVIEW_REQUIRED`.
+Retry policy: 5 attempts, exponential backoff starting at 2 s with jitter (2, 4, 8, 16, 32 s). **Dead-letter handling:** a job that exhausts its attempts stays in BullMQ's failed set and a `failed` listener copies it into a `dead-letter` queue with the original payload, error and attempt count, and marks the outbox row `FAILED`. `GET /admin/jobs` lists dead letters and `POST /admin/jobs/:id/retry` re-drives one. A dead-lettered `ProcessPayment` leaves the payment in its current state — it is never auto-failed, because the provider's state is unknown — and reconciliation surfaces it as `REVIEW_REQUIRED`.
 
 ### 5.3 Webhook handling
 
@@ -248,7 +259,7 @@ interface SanctionsProvider { screen(subject: ScreeningSubject): Promise<Screeni
 interface RateProvider      { getMidRate(base: Currency, quote: Currency): Promise<FxRate>; }
 ```
 
-Mock adapters are deterministic and driven by test tokens in the input (COMPLIANCE.md §6, and beneficiary-name or amount triggers for provider scenarios such as `TEST-FAIL`, `TEST-TIMEOUT`, `TEST-DUPLICATE-WEBHOOK`, `TEST-OUT-OF-ORDER`). The mock payment provider keeps its own records in `provider_payments` and delivers webhooks over real HTTP to the API with a real signature, so the webhook path is exercised exactly as it would be with an external provider. No adapter for a real provider exists or is planned.
+Mock adapters are deterministic and driven by test tokens in the input (COMPLIANCE.md §6, and beneficiary-name tokens for provider scenarios: `TEST-FAIL`, `TEST-TIMEOUT`, `TEST-DUPLICATE-WEBHOOK`, `TEST-OUT-OF-ORDER`). The mock payment provider keeps its own records in `provider_payments` and delivers webhooks over real HTTP to the API with a real signature, so the webhook path is exercised exactly as it would be with an external provider. No adapter for a real provider exists or is planned.
 
 ## 8. Security boundaries
 
@@ -271,7 +282,7 @@ flowchart LR
 | Failure | Behaviour |
 |---|---|
 | Database down | Requests fail `503 SERVICE_UNAVAILABLE`; readiness fails; nothing is partially written |
-| Redis down | API serves; outbox accumulates; readiness reports degraded; rate limiter falls back to in-memory |
+| Redis down (BullMQ driver) | API serves; outbox accumulates and is published when Redis returns; readiness reports `degraded` |
 | Provider timeout | Job retries with the same idempotency key; then dead-letter; payment stays `PROCESSING` |
 | Duplicate webhook | 200, no effect |
 | Out-of-order webhook | Applied only if legal; else `IGNORED` |
@@ -317,3 +328,5 @@ paybridge/
 ```
 
 Tooling: pnpm workspaces + Turborepo, TypeScript strict, ESLint, Prettier.
+
+As built, feature modules are declared together in `apps/api/src/app.module.ts` (one small `@Module` each) and `packages/types` was folded into `packages/shared`; the web app keeps its API types in `apps/web/src/lib/types.ts`.

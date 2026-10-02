@@ -4,10 +4,10 @@
 
 ## 1. Authentication
 
-- **Passwords:** Argon2id (memory 19 MiB, 2 iterations, parallelism 1 — OWASP baseline), per-password salt. Minimum 12 characters, rejected if in a common-password list. Never logged, never returned.
-- **Access token:** JWT, HS256 with a 256-bit secret from the environment (asymmetric keys are a P2 upgrade), 15-minute lifetime, held in memory by the web app — not in `localStorage`.
+- **Passwords:** scrypt from `node:crypto` (N = 2^15, r = 8, p = 3 — an OWASP-listed parameter set), per-password 128-bit salt, stored as `scrypt$N$r$p$salt$hash`. scrypt was chosen over Argon2id so that no native add-on has to be compiled or shipped; the hash format carries its parameters so they can be raised later. Minimum 12 characters, rejected if in a common-password list. Never logged, never returned.
+- **Access token:** JWT, HS256 with a secret of at least 32 characters from the environment (asymmetric keys are a P2 upgrade), carrying only the user id (`sub`), 15-minute lifetime, held in memory by the web app — not in `localStorage`.
 - **Refresh token:** 256-bit random, opaque, stored hashed (SHA-256), 7-day lifetime, rotated on every use, delivered as `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`. Presenting an already-rotated token revokes the entire family.
-- **Login protection:** 10 attempts/min per IP and progressive delay per account; identical error for unknown user and wrong password.
+- **Login protection:** 10 attempts/min per IP; identical error and comparable timing for unknown user and wrong password (a dummy hash is verified when the user does not exist). Per-account lockout is not implemented (P1).
 - **Logout:** revokes the refresh family; access tokens expire naturally.
 - MFA is out of scope (P2).
 
@@ -33,7 +33,7 @@ Platform admin access to tenant data is explicit (`*.read` at platform scope) an
 
 | Data | Protection |
 |---|---|
-| Passwords | Argon2id hash |
+| Passwords | scrypt hash |
 | Refresh tokens | SHA-256 hash |
 | Beneficiary account number | AES-256-GCM, random 96-bit IV per value, key from `DATA_ENCRYPTION_KEY`; stored as `v1:iv:tag:ciphertext` so keys can be rotated |
 | Account-number duplicate check | HMAC-SHA256 fingerprint with a separate key |
@@ -61,7 +61,7 @@ Secrets: `JWT_SECRET`, `DATA_ENCRYPTION_KEY`, `FINGERPRINT_HMAC_KEY`, `WEBHOOK_S
 - `helmet`: CSP, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors 'none'`, HSTS.
 - **CORS:** explicit allow-list from config; credentials allowed only for the web origin.
 - **CSRF:** the API authenticates with a bearer header, which browsers do not attach automatically. The one cookie-authenticated route (`/auth/refresh`) is protected by `SameSite=Strict` plus an `Origin` check.
-- **Rate limiting:** Redis-backed, per IP and per user, with an in-memory fallback.
+- **Rate limiting:** `@nestjs/throttler`, per IP, held in process memory: 300 requests/min by default, 10/min on register and login, 30/min on quotes. In-memory counters are per instance, so on a multi-instance or serverless deployment the effective limit is looser; a Redis-backed store is the documented next step (P1).
 - **Validation:** DTO schemas on every input with `whitelist` and `forbidNonWhitelisted` (blocks mass assignment); size limits on bodies and strings.
 - **SQL injection:** Prisma parameterises queries; the few raw queries use tagged templates (`$queryRaw`), never string concatenation. `$queryRawUnsafe` is banned by lint.
 - **Output:** React escapes by default; no `dangerouslySetInnerHTML`.
@@ -86,7 +86,7 @@ Audit logs are append-only (DB trigger), written in the same transaction as the 
 | T8 | Replay of a payment request | Tampering | `Idempotency-Key` with body hash |
 | T9 | Stolen access token | Spoofing | 15-minute lifetime, in-memory storage, CSP |
 | T10 | Stolen refresh token | Spoofing | HttpOnly/SameSite cookie, rotation with reuse detection |
-| T11 | Credential stuffing / brute force | Spoofing | Rate limits, uniform errors, Argon2id cost |
+| T11 | Credential stuffing / brute force | Spoofing | Rate limits, uniform errors, scrypt cost |
 | T12 | Account numbers leak through logs, errors or API | Information disclosure | Encryption at rest, masking, log redaction, no bodies logged for beneficiary routes |
 | T13 | Insider edits ledger or audit rows | Tampering / Repudiation | Immutability triggers, restricted DB role (P1), reconciliation and trial balance detect drift |
 | T14 | Actor denies an action | Repudiation | Audit log with user, IP, user agent, request id, in-transaction |
@@ -99,3 +99,10 @@ Audit logs are append-only (DB trigger), written in the same transaction as the 
 ## 10. Per-feature security review checklist
 
 Used at the end of each phase: inputs validated · permission declared · tenant scope verified by test · no sensitive data in logs or responses · state change audited · errors do not leak internals · new secrets documented in `.env.example`.
+
+## 11. As built — known gaps
+
+- Rate limiting is in-memory (see §7). Postgres row-level security and a restricted database role for ledger/audit tables are designed (DATABASE.md §5) but not implemented; tenant isolation rests on scoped queries, composite foreign keys and the isolation test suite.
+- No MFA, no per-account lockout, no password reset flow, no email verification.
+- gitleaks runs in CI only; there is no pre-commit hook.
+- The hosted demo publishes its seeded test credentials on the sign-in page by design. Anyone can sign in and change the fictional data. Do not put anything real into it.

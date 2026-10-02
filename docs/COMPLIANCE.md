@@ -38,7 +38,7 @@ Rules are rows in `compliance_rules`; `parameters` is validated against a per-ty
 | Code | Type | Default parameters | Fires when | Default outcome |
 |---|---|---|---|---|
 | `AMOUNT_THRESHOLD` | `AMOUNT_THRESHOLD` | `{ "currency": "AED", "threshold": "50000.00" }` | `source_amount > threshold` | `REVIEW` |
-| `VELOCITY_24H` | `VELOCITY` | `{ "maxCount": 5, "windowHours": 24 }` | company already has more than `maxCount` non-cancelled payments in the window | `REVIEW` |
+| `VELOCITY_24H` | `VELOCITY` | `{ "maxCount": 5, "windowHours": 24 }` | company already has `maxCount` or more non-cancelled payments in the window | `REVIEW` |
 | `DESTINATION_COUNTRY` | `DESTINATION_COUNTRY` | `{ "allowed": ["IN"] }` | beneficiary country not in `allowed` | `REJECT` |
 | `SANCTIONS_SCREEN` | `SANCTIONS` | `{ "subjects": ["beneficiary", "company"] }` | provider returns `MATCH` | `REJECT` |
 | `PEP_SCREEN` | `PEP` | `{ "subjects": ["beneficiary"] }` | provider returns `PEP_MATCH` | `REVIEW` |
@@ -84,7 +84,7 @@ Matching is case-insensitive substring on the screened name.
 |---|---|
 | `TEST-SANCTION` | `MATCH` |
 | `TEST-PEP` | `PEP_MATCH` |
-| `TEST-TIMEOUT` | throws `ProviderTimeoutError` (exercises retry path) |
+| `TEST-SCREEN-TIMEOUT` | throws `ProviderTimeoutError`; the engine fails safe and holds the payment for `REVIEW` |
 | anything else | `CLEAR` |
 
 | Company name / licence contains | `MockKYBProvider.verify` returns |
@@ -93,7 +93,7 @@ Matching is case-insensitive substring on the screened name.
 | `TEST-KYB-HIGHRISK` | `{ result: "PASS", riskLevel: "HIGH" }` |
 | anything else | `{ result: "PASS", riskLevel: "LOW" }` |
 
-The mock result is advisory. A platform admin always makes the KYB decision; a config flag `KYB_AUTO_APPROVE=true` lets the demo auto-approve `PASS`/`LOW` results ("Mock KYB approves company").
+The mock result is advisory. A platform admin always makes the KYB decision; a config flag `KYB_AUTO_APPROVE=true` (off by default) auto-approves `PASS`/`LOW` results ("Mock KYB approves company").
 
 ## 7. KYB simulation
 

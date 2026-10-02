@@ -6,7 +6,7 @@ Base path `/api/v1`. JSON only. The live contract is the OpenAPI document served
 
 ## 1. Conventions
 
-**Authentication.** `Authorization: Bearer <access JWT>` (15 min). Refresh token in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api/v1/auth`. JWT claims: `sub`, `cid` (active company, absent for platform admins), `role`, `jti`, `exp`. Permissions are resolved server-side from the role, not read from the token.
+**Authentication.** `Authorization: Bearer <access JWT>` (15 min). Refresh token in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api/v1/auth`. JWT claims: `sub`, `typ`, `jti`, `iss`, `exp`. Company, role and permissions are resolved server-side on every request, never read from the token, so a role change or suspension takes effect immediately.
 
 **Tenant context.** Derived from the token and verified against `company_users`. Where a path contains a company id it must equal the caller's company unless the caller is a platform admin. A resource belonging to another tenant returns `404`, never `403`, so existence is not disclosed.
 
@@ -36,7 +36,7 @@ Base path `/api/v1`. JSON only. The live contract is the OpenAPI document served
 
 Only successful outcomes are stored. The idempotency row is written in the same database transaction as the payment, so any failure (4xx or 5xx) rolls it back and releases the key; a retry is then evaluated afresh. `POST /sandbox/wallet/topup` accepts the header too.
 
-**Rate limits.** Auth endpoints 10/min per IP; quotes 30/min per user; general 300/min per user. `429 RATE_LIMITED` with `Retry-After`.
+**Rate limits.** Register and login 10/min, quotes 30/min, everything else 300/min — per IP. `429 RATE_LIMITED` with `Retry-After`.
 
 ## 2. Endpoints
 
@@ -103,14 +103,22 @@ Only successful outcomes are stored. The idempotency row is written in the same 
 | GET | `/compliance/checks/:paymentId` | compliance.read | |
 | GET | `/admin/compliance-queue` | compliance.review | Payments in `COMPLIANCE_REVIEW` |
 | POST | `/admin/compliance/:id/decision` | compliance.review | `:id` = payment id; `{ decision: "CLEAR" \| "REJECT", reason }` |
-| GET / PATCH | `/admin/compliance/rules[/:id]` ★ | compliance.review | View and tune rules (P1) |
+| GET / PATCH | `/admin/compliance/rules[/:id]` ★ | compliance.review | View and tune rules |
+
+### Operations ★
+| Method | Path | perm | Notes |
+|---|---|---|---|
+| GET | `/admin/jobs` | platform.admin | Queue driver, job counts, dead letters |
+| POST | `/admin/jobs/:id/retry` | platform.admin | Re-drive a dead-lettered job |
+| GET | `/reports/reconciliation/runs` | reconciliation.read | Run history |
+| GET | `/internal/cron` | `CRON_SECRET` bearer | Scheduled tasks on serverless |
 
 ### Ledger
 | Method | Path | perm | Notes |
 |---|---|---|---|
 | GET | `/ledger/accounts` | ledger.read | Own accounts; all for platform admin |
 | GET | `/ledger/accounts/:id` | ledger.read | With paginated entries |
-| GET | `/ledger/:companyId/balance` | ledger.read | `{ available, reserved, currency }` |
+| GET | `/ledger/:companyId/balance` | company.read | `{ available, reserved, currency, provisioned }` — readable by makers too, who need it to create payments |
 | GET | `/ledger/transactions` ★ | ledger.read | Filters: `paymentId`, `type`, date |
 | GET | `/admin/ledger/trial-balance` ★ | PLATFORM_ADMIN | Per-currency debit/credit totals |
 | POST | `/sandbox/wallet/topup` ★ | wallet.topup | `{ amount }` AED; simulated funding |

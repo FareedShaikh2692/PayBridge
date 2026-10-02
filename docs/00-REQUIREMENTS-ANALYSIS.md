@@ -42,7 +42,7 @@ This document records what was ambiguous, missing or risky in the source brief, 
 | Provider timeout leaves state unknown | Idempotent provider submission keyed by payment id; never auto-fail on timeout; reconciliation flags `REVIEW_REQUIRED` |
 | Prisma `Decimal` silently coerced to JS `number` | Lint rule + shared `Money` type; API serialises amounts as strings |
 | Scope: 12 phases is large for one portfolio project | Strict P0/P1/P2 backlog; P0 path is the 21-step demo scenario |
-| **Docker is not installed on this machine** | Needed for Phase 1's one-command start. Install Docker Desktop, or run Postgres and Redis natively in the interim |
+| **Docker is not installed on the development machine** | Development and all tests ran against a project-local PostgreSQL (`pnpm db:local:start`) and the system Redis. The Dockerfiles and Compose file are written and built in CI but were never run locally |
 
 ## 4. Security risks
 
