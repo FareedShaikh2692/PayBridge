@@ -1,0 +1,16 @@
+import { Global, Module } from '@nestjs/common';
+import { Clock } from '../common/clock';
+import { PrismaService } from '../common/prisma.service';
+import { CONFIG, loadConfig } from '../config';
+import { AuditController } from './audit/audit.controller';
+import { AuditService } from './audit/audit.service';
+import { OutboxService } from './outbox/outbox.service';
+
+/** Cross-cutting infrastructure available to every module. */
+@Global()
+@Module({
+  controllers: [AuditController],
+  providers: [{ provide: CONFIG, useFactory: () => loadConfig() }, PrismaService, Clock, AuditService, OutboxService],
+  exports: [CONFIG, PrismaService, Clock, AuditService, OutboxService],
+})
+export class CoreModule {}

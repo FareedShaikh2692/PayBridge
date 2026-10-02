@@ -1,0 +1,21 @@
+{
+  "extends": "@paybridge/config/tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
+    "noUnusedLocals": false,
+    "types": [
+      "node",
+      "jest"
+    ],
+    "incremental": true,
+    "declaration": false
+  },
+  "include": [
+    "src",
+    "test"
+  ]
+}
