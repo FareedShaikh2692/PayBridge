@@ -157,7 +157,8 @@ export class MockPaymentProvider extends PaymentProvider implements OnModuleInit
       data: { amount: p.amount, currency: p.currency, failure_reason: p.failureReason },
     });
     const target = `${this.config.WEBHOOK_TARGET_URL ?? `http://localhost:${this.config.PORT}`}/api/v1/webhooks/provider`;
-    const response = await fetch(target, {
+    // Typed structurally: only these two fields are used, whichever fetch typings the build resolves.
+    const response: { ok: boolean; status: number } = await fetch(target, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-paybridge-signature': signWebhook(this.config.WEBHOOK_SIGNING_SECRET, Math.floor(Date.now() / 1000), body) },
       body,
