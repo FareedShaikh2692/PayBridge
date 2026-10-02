@@ -1,0 +1,1 @@
+{ "extends": "@paybridge/config/tsconfig.base.json", "compilerOptions": { "outDir": "dist", "rootDir": "src", "types": ["jest", "node"] }, "include": ["src"] }
