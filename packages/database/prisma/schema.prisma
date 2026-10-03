@@ -281,6 +281,7 @@ model RefreshToken {
   expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
   revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
   rotatedAt  DateTime? @map("rotated_at") @db.Timestamptz(6)
+  persistent Boolean   @default(true) // "remember me": a persistent cookie; otherwise a browser-session cookie with a short lifetime
   ipAddress  String?   @map("ip_address")
   userAgent  String?   @map("user_agent")
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

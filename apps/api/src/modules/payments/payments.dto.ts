@@ -29,5 +29,6 @@ export class PaymentQuery extends PageQuery {
   @ApiPropertyOptional() @IsOptional() @IsISO8601() to?: string;
   @ApiPropertyOptional() @IsOptional() @Matches(AMOUNT_REGEX) minAmount?: string;
   @ApiPropertyOptional() @IsOptional() @Matches(AMOUNT_REGEX) maxAmount?: string;
+  @ApiPropertyOptional({ description: 'Search by payment reference or beneficiary name' }) @IsOptional() @IsString() @MaxLength(100) q?: string;
   @ApiPropertyOptional({ description: 'Only payments awaiting maker-checker approval' }) @IsOptional() @IsIn(['true', 'false']) awaitingApproval?: string;
 }

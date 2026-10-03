@@ -1,7 +1,8 @@
 'use client';
 
 import clsx from 'clsx';
-import { AlertCircle, AlertTriangle, ArrowLeft, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Inbox, Info, Loader2, Minus, RotateCcw, X, type LucideIcon } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ArrowLeft, Check, CheckCircle2, ChevronLeft, ChevronRight, Copy, Inbox, Info, Loader2, RotateCcw, X, type LucideIcon } from 'lucide-react';
+import { LogoMark } from './brand';
 import Link from 'next/link';
 import { createContext, forwardRef, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { errorMessage, type PageMeta } from '@/lib/api';
@@ -58,9 +59,12 @@ export function SkeletonRows({ rows = 5 }: { rows?: number }) {
 
 export function PageLoader({ label = 'Loading' }: { label?: string }) {
   return (
-    <div role="status" className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-muted-foreground">
-      <Spinner className="h-5 w-5 text-primary" />
-      <span>{label}…</span>
+    <div role="status" className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-muted-foreground">
+      <LogoMark size={40} flow />
+      <span className="relative h-0.5 w-28 overflow-hidden rounded-full bg-border" aria-hidden="true">
+        <span className="absolute inset-y-0 left-0 w-2/5 animate-progress-indeterminate rounded-full bg-primary" />
+      </span>
+      <span className="text-[13px]">{label}…</span>
     </div>
   );
 }
@@ -83,38 +87,100 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   loadingLabel?: string;
+  /** Briefly confirms a completed action in place. */
+  success?: boolean;
+  successLabel?: string;
   icon?: LucideIcon;
 }
 
 /** One button for the whole product. `loading` disables it and shows a spinner, so a double click cannot double-submit. */
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({ variant = 'primary', size = 'md', loading, loadingLabel, icon: Icon, className, children, disabled, type = 'button', ...rest }, ref) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({ variant = 'primary', size = 'md', loading, loadingLabel, success, successLabel, icon: Icon, className, children, disabled, type = 'button', ...rest }, ref) {
   return (
-    <button ref={ref} type={type} className={clsx(BUTTON[variant], size === 'lg' && 'btn-lg', size === 'sm' && 'btn-sm', className)} disabled={disabled || loading} aria-busy={loading || undefined} {...rest}>
-      {loading ? <Spinner /> : Icon ? <Icon aria-hidden="true" className="h-4 w-4" /> : null}
-      {loading && loadingLabel ? loadingLabel : children}
+    <button ref={ref} type={type} className={clsx(BUTTON[variant], size === 'lg' && 'btn-lg', size === 'sm' && 'btn-sm', success && variant === 'primary' && '!bg-success-bright', className)} disabled={disabled || loading || success} aria-busy={loading || undefined} {...rest}>
+      {loading ? <Spinner /> : success ? <Check aria-hidden="true" className="h-4 w-4 animate-pop-in" strokeWidth={2.5} /> : Icon ? <Icon aria-hidden="true" className="h-4 w-4" /> : null}
+      {loading && loadingLabel ? loadingLabel : success && successLabel ? successLabel : children}
     </button>
   );
 });
+
+/** Copies a value (a payment ID, a reference) and confirms it in place. */
+export function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* clipboard unavailable: nothing to confirm */
+        }
+      }}
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors duration-150 hover:bg-muted hover:text-foreground"
+      aria-label={copied ? 'Copied' : `${label} ${value}`}
+      title={copied ? 'Copied' : label}
+    >
+      {copied ? <Check aria-hidden="true" className="h-3.5 w-3.5 text-success" strokeWidth={2.5} /> : <Copy aria-hidden="true" className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
+/** Fires once when the element first scrolls into view; used for subtle, one-time reveals. */
+export function useInView<T extends Element>(options: IntersectionObserverInit = { rootMargin: '0px 0px -12% 0px' }) {
+  const ref = useRef<T>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || visible) return;
+    if (typeof IntersectionObserver === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setVisible(true);
+      return;
+    }
+    const io = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setVisible(true);
+        io.disconnect();
+      }
+    }, options);
+    io.observe(el);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+  return { ref, visible };
+}
+
+export function Reveal({ children, className, as: Tag = 'div' }: { children: React.ReactNode; className?: string; as?: 'div' | 'section' | 'li' }) {
+  const { ref, visible } = useInView<HTMLDivElement>();
+  return (
+    <Tag ref={ref as React.Ref<HTMLDivElement & HTMLLIElement>} data-visible={visible} className={clsx('reveal', className)}>
+      {children}
+    </Tag>
+  );
+}
 
 /* ────────────────────────────── Status ────────────────────────────── */
 
 export type Tone = 'good' | 'warn' | 'bad' | 'info' | 'neutral';
 
 const TONE: Record<Tone, string> = {
-  good: 'bg-success-soft text-success',
-  warn: 'bg-warning-soft text-warning',
-  bad: 'bg-error-soft text-error',
-  info: 'bg-primary-soft text-info',
-  neutral: 'bg-muted text-muted-foreground',
+  good: 'border-success-bright/20 bg-success-soft text-success',
+  warn: 'border-warning-bright/25 bg-warning-soft text-warning',
+  bad: 'border-error-bright/20 bg-error-soft text-error',
+  info: 'border-primary/20 bg-primary-soft text-primary-hover',
+  neutral: 'border-border bg-muted text-muted-foreground',
 };
-/** Every status carries an icon as well as a colour, so state is never conveyed by colour alone. */
-const TONE_ICON: Record<Tone, LucideIcon> = { good: Check, warn: AlertTriangle, bad: X, info: Clock, neutral: Minus };
+const DOT: Record<Tone, string> = { good: 'bg-success-bright', warn: 'bg-warning-bright', bad: 'bg-error-bright', info: 'bg-primary', neutral: 'bg-ink-faint' };
 
-export function Badge({ tone = 'neutral', children, title, icon }: { tone?: Tone; children: React.ReactNode; title?: string; icon?: LucideIcon | false }) {
-  const Icon = icon === false ? null : (icon ?? TONE_ICON[tone]);
+/** Dot + label. The label always states the status in words, so it never depends on colour alone. */
+export function Badge({ tone = 'neutral', children, title, icon, caps = false }: { tone?: Tone; children: React.ReactNode; title?: string; icon?: LucideIcon | false; caps?: boolean }) {
+  const Icon = icon ? icon : null;
   return (
-    <span title={title} className={clsx('inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold leading-5', TONE[tone])}>
-      {Icon && <Icon aria-hidden="true" className="h-3 w-3 shrink-0" strokeWidth={2.5} />}
+    <span title={title} className={clsx('inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-[3px] text-xs font-semibold leading-4', caps && 'text-[11px] uppercase tracking-[0.04em]', TONE[tone])}>
+      {Icon ? <Icon aria-hidden="true" className="h-3 w-3 shrink-0" strokeWidth={2.5} /> : icon === false ? null : <span aria-hidden="true" className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', DOT[tone])} />}
       {children}
     </span>
   );
@@ -130,7 +196,7 @@ const STATUS_TONE: Record<string, Tone> = {
   // quotes, beneficiaries, approvals
   ACTIVE: 'good', USED: 'neutral', INACTIVE: 'neutral', BLOCKED: 'bad', NOT_REQUIRED: 'neutral',
   // reconciliation, webhooks, jobs
-  MATCHED: 'good', MISMATCH: 'bad', MISSING: 'bad', DUPLICATE: 'bad', REVIEW_REQUIRED: 'warn', RECEIVED: 'info', PROCESSED: 'good', IGNORED: 'neutral', RUNNING: 'info', COMPLETED: 'good', SUSPENDED: 'bad', INVITED: 'info',
+  RECONCILED: 'good', MATCHED: 'good', MISMATCH: 'bad', MISSING: 'bad', DUPLICATE: 'bad', REVIEW_REQUIRED: 'warn', RECEIVED: 'info', PROCESSED: 'good', IGNORED: 'neutral', RUNNING: 'info', COMPLETED: 'good', SUSPENDED: 'bad', INVITED: 'info',
   LOW: 'good', MEDIUM: 'warn', HIGH: 'bad', PASS: 'good', FAIL: 'bad',
 };
 
@@ -140,9 +206,10 @@ export function statusTone(value: string): Tone {
 
 export function StatusBadge({ value, label, testId }: { value: string | null | undefined; label?: string; testId?: string }) {
   if (!value) return <span className="text-ink-faint">—</span>;
+  // Keyed on the value, so a status change replays a short entrance instead of swapping silently.
   return (
-    <span data-testid={testId} data-status={value}>
-      <Badge tone={statusTone(value)}>{label ?? titleCase(value)}</Badge>
+    <span data-testid={testId} data-status={value} key={value} className="inline-flex animate-pop-in">
+      <Badge tone={statusTone(value)} caps>{label ?? titleCase(value)}</Badge>
     </span>
   );
 }
@@ -189,15 +256,27 @@ export function Card({ title, actions, children, className, padded = true }: { t
   );
 }
 
-export function Stat({ label, value, sub, testId, icon: Icon }: { label: string; value: React.ReactNode; sub?: React.ReactNode; testId?: string; icon?: LucideIcon }) {
+export function Stat({ label, value, sub, testId, icon: Icon, unit, trend }: { label: string; value: React.ReactNode; sub?: React.ReactNode; testId?: string; icon?: LucideIcon; unit?: string; trend?: { value: string; direction: 'up' | 'down' | 'flat' } | null }) {
   return (
     <div className="card p-5" data-testid={testId}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <p className="text-[13px] font-medium text-muted-foreground">{label}</p>
         {Icon && <Icon aria-hidden="true" className="h-4 w-4 text-ink-faint" />}
       </div>
-      <p className="num mt-2 text-[22px] font-semibold leading-8 tracking-tight sm:text-[26px]">{value}</p>
-      {sub && <p className="mt-1.5 text-xs text-muted-foreground">{sub}</p>}
+      <p className="num mt-3 flex items-baseline gap-1.5 text-[24px] font-semibold leading-none tracking-[-0.02em] sm:text-[30px]">
+        {unit && <span className="text-sm font-medium tracking-normal text-muted-foreground">{unit}</span>}
+        {value}
+      </p>
+      {(sub || trend) && (
+        <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          {trend && (
+            <span className={clsx('num inline-flex items-center rounded-md px-1.5 py-0.5 font-semibold', trend.direction === 'up' ? 'bg-success-soft text-success' : trend.direction === 'down' ? 'bg-error-soft text-error' : 'bg-muted text-muted-foreground')}>
+              {trend.direction === 'up' ? '+' : trend.direction === 'down' ? '−' : ''}{trend.value}
+            </span>
+          )}
+          {sub}
+        </p>
+      )}
     </div>
   );
 }

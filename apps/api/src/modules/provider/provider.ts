@@ -93,7 +93,7 @@ export class MockPaymentProvider extends PaymentProvider implements OnModuleInit
     if (existing) return this.view(existing); // idempotent replay
 
     const scenario = scenarioFor(request.beneficiary.name);
-    const providerPaymentId = `pp_${randomBytes(10).toString('hex')}`;
+    const providerPaymentId = `SIM-${randomBytes(5).toString('hex').toUpperCase()}`;
     const delay = this.config.MOCK_PROVIDER_DELAY_MS;
     // Offsets are strictly increasing, so the intended order survives even when the delay is zero.
     const order: EventType[] =

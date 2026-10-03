@@ -19,6 +19,7 @@ export interface IssuedTokens {
   expiresIn: number;
   refreshToken: string;
   refreshExpiresAt: Date;
+  persistent: boolean;
 }
 
 @Injectable()
@@ -61,7 +62,7 @@ export class AuthService {
       await this.audit.record(this.repo.db, { action: 'LOGIN_FAILED', entityType: 'user', entityId: user?.id ?? null, userId: user?.id ?? null, companyId: null });
       throw new DomainError('INVALID_CREDENTIALS');
     }
-    const tokens = await this.issue(user.id, randomUUID());
+    const tokens = await this.issue(user.id, randomUUID(), dto.rememberMe ?? false);
     await this.repo.recordLogin(user.id, this.clock.now());
     await this.audit.record(this.repo.db, { action: 'LOGIN_SUCCEEDED', entityType: 'user', entityId: user.id, userId: user.id, companyId: null });
     return { ...tokens, userId: user.id };
@@ -81,7 +82,7 @@ export class AuthService {
     if (row.expiresAt <= now || row.user.status !== 'ACTIVE') throw new DomainError('UNAUTHENTICATED');
     // Compare-and-set so two concurrent refreshes cannot both succeed.
     if (!(await this.repo.claimRotation(row.id, now))) throw new DomainError('UNAUTHENTICATED');
-    return this.issue(row.userId, row.familyId);
+    return this.issue(row.userId, row.familyId, row.persistent);
   }
 
   async logout(presented: string | undefined): Promise<void> {
@@ -107,7 +108,7 @@ export class AuthService {
     };
   }
 
-  private async issue(userId: string, familyId: string): Promise<IssuedTokens> {
+  private async issue(userId: string, familyId: string, persistent: boolean): Promise<IssuedTokens> {
     const accessToken = jwt.sign({ typ: 'access' }, this.config.JWT_SECRET, {
       algorithm: 'HS256',
       subject: userId,
@@ -116,8 +117,9 @@ export class AuthService {
       jwtid: randomUUID(),
     });
     const refreshToken = randomToken(32);
-    const refreshExpiresAt = new Date(this.clock.now().getTime() + this.config.REFRESH_TTL_DAYS * 86_400_000);
-    await this.repo.createRefreshToken({ userId, familyId, tokenHash: sha256Hex(refreshToken), expiresAt: refreshExpiresAt, ipAddress: ctx()?.ipAddress, userAgent: ctx()?.userAgent });
-    return { accessToken, expiresIn: this.config.JWT_ACCESS_TTL_SECONDS, refreshToken, refreshExpiresAt };
+    // Without "remember me" the session is short-lived and the cookie ends with the browser session.
+    const refreshExpiresAt = new Date(this.clock.now().getTime() + (persistent ? this.config.REFRESH_TTL_DAYS * 86_400_000 : 12 * 3_600_000));
+    await this.repo.createRefreshToken({ userId, familyId, tokenHash: sha256Hex(refreshToken), expiresAt: refreshExpiresAt, persistent, ipAddress: ctx()?.ipAddress, userAgent: ctx()?.userAgent });
+    return { accessToken, expiresIn: this.config.JWT_ACCESS_TTL_SECONDS, refreshToken, refreshExpiresAt, persistent };
   }
 }

@@ -239,6 +239,12 @@ describe('payment creation invariants', () => {
     const page = await t.http.get('/api/v1/payments?page=2&pageSize=2&status=CREATED').set(auth(acme.viewer)).expect(200);
     expect(page.body.data.length).toBeLessThanOrEqual(2);
     expect(page.body.meta).toMatchObject({ page: 2, pageSize: 2 });
+    const sample = all.body.data[0];
+    const byRef = (await t.http.get(`/api/v1/payments?q=${encodeURIComponent(sample.reference.slice(-6))}`).set(auth(acme.viewer)).expect(200)).body.data;
+    expect(byRef.map((p: any) => p.id)).toContain(sample.id);
+    const byName = (await t.http.get(`/api/v1/payments?q=${encodeURIComponent(sample.beneficiary.name.slice(0, 5).toLowerCase())}`).set(auth(acme.viewer)).expect(200)).body.data;
+    expect(byName.length).toBeGreaterThan(0);
+    expect((await t.http.get('/api/v1/payments?q=no-such-payment-xyz').set(auth(acme.viewer)).expect(200)).body.data).toEqual([]);
     const none = (await t.http.get('/api/v1/payments?minAmount=999999.00').set(auth(acme.viewer)).expect(200)).body.data;
     expect(none).toEqual([]);
   });

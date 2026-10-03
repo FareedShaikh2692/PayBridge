@@ -1,7 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { CancellationReason, PaymentOrder, PaymentStatus, Prisma } from '@paybridge/database';
 import { IDEMPOTENCY_KEY_REGEX, dec, gatesClosed, maskAccountNumber, money, paymentDisplayStatus, paymentMachine, postingKey, postings, rate } from '@paybridge/shared';
-import { randomBytes } from 'node:crypto';
 import { Actor, requireCompany } from '../../common/actor';
 import { Clock } from '../../common/clock';
 import { sha256Hex } from '../../common/crypto';
@@ -167,7 +166,7 @@ export class PaymentsService implements OnModuleInit {
     // Every monetary value is copied from the stored quote; nothing financial comes from the request body.
     let payment = await tx.paymentOrder.create({
       data: {
-        reference: `PB-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${randomBytes(4).toString('hex').toUpperCase()}`,
+        reference: await this.repo.nextReference(tx, now),
         companyId,
         beneficiaryId: beneficiary.id,
         quoteId: quote.id,
@@ -476,6 +475,7 @@ export class PaymentsService implements OnModuleInit {
       ...(actor.isPlatformAdmin && q.companyId ? { companyId: q.companyId } : {}),
       ...(q.status ? { status: q.status } : {}),
       ...(q.beneficiaryId ? { beneficiaryId: q.beneficiaryId } : {}),
+      ...(q.q?.trim() ? { OR: [{ reference: { contains: q.q.trim(), mode: 'insensitive' as const } }, { beneficiary: { name: { contains: q.q.trim(), mode: 'insensitive' as const } } }] } : {}),
       ...(q.awaitingApproval === 'true' ? { approvalStatus: 'PENDING', status: { in: AWAITING_GATES } } : {}),
       ...(q.from || q.to ? { createdAt: { ...(q.from ? { gte: new Date(q.from) } : {}), ...(q.to ? { lte: new Date(q.to) } : {}) } } : {}),
       ...(q.minAmount || q.maxAmount ? { sourceAmount: { ...(q.minAmount ? { gte: q.minAmount } : {}), ...(q.maxAmount ? { lte: q.maxAmount } : {}) } } : {}),
@@ -489,6 +489,7 @@ export class PaymentsService implements OnModuleInit {
     if (!p) throw new DomainError('PAYMENT_NOT_FOUND');
     const canSeeLedger = actor.permissions.has('ledger.read');
     const canSeeCompliance = actor.permissions.has('compliance.read');
+    const reconciliation = await this.repo.latestReconciliation(p.id);
     return {
       ...this.view(p),
       timeline: p.statusHistory.map((h) => ({ id: h.id, fromStatus: h.fromStatus, toStatus: h.toStatus, reason: h.reason, actorType: h.actorType, actorId: h.actorId, createdAt: h.createdAt })),
@@ -517,6 +518,8 @@ export class PaymentsService implements OnModuleInit {
           }
         : null,
       ledgerTransactions: canSeeLedger ? p.ledgerTransactions.map((t) => this.ledger.transactionView(t)) : [],
+      // The latest reconciliation verdict for this payment, if a run has covered it.
+      reconciliation: reconciliation ? { status: reconciliation.status, reasonCodes: reconciliation.reasonCodes, runAt: reconciliation.run.startedAt } : null,
     };
   }
 

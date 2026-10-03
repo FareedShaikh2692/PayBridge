@@ -102,7 +102,7 @@ test('demo scenario: onboarding to a reconciled payment', async ({ page }) => {
     await expect(page.getByTestId('payment-created')).toBeVisible();
     await expect(page.getByTestId('created-status')).toHaveAttribute('data-status', 'CREATED');
     reference = (await page.getByTestId('payment-reference').textContent()) ?? '';
-    expect(reference).toMatch(/^PB-\d{8}-[0-9A-F]{8}$/);
+    expect(reference).toMatch(/^PB-\d{4}-\d{6}$/);
     await page.getByRole('link', { name: 'View payment' }).click();
     await expectStatus(page, 'CREATED');
     paymentUrl = page.url();

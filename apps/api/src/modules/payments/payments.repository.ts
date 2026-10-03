@@ -33,6 +33,16 @@ export class PaymentsRepository {
     return { items, total };
   }
 
+  /** PB-<year>-<6 digits> from a database sequence: unique, ordered and easy to read aloud. */
+  async nextReference(tx: Tx, at: Date): Promise<string> {
+    const [{ n }] = await tx.$queryRaw<{ n: bigint }[]>`SELECT nextval('payment_reference_seq') AS n`;
+    return `PB-${at.getUTCFullYear()}-${String(n).padStart(6, '0')}`;
+  }
+
+  latestReconciliation(paymentId: string) {
+    return this.prisma.client.reconciliationItem.findFirst({ where: { paymentId, run: { status: 'COMPLETED' } }, orderBy: { createdAt: 'desc' }, include: { run: { select: { startedAt: true } } } });
+  }
+
   exists(tx: Tx, id: string) {
     return tx.paymentOrder.findUnique({ where: { id }, select: { id: true } });
   }

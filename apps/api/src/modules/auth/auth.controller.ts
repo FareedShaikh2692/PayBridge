@@ -82,7 +82,8 @@ export class AuthController {
       secure: this.config.COOKIE_SECURE,
       sameSite: 'strict',
       path: COOKIE_PATH,
-      expires: tokens.refreshExpiresAt,
+      // Persistent only with "remember me"; otherwise a session cookie that the browser drops on close.
+      ...(tokens.persistent ? { expires: tokens.refreshExpiresAt } : {}),
     });
   }
 }

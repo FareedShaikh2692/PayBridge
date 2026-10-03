@@ -36,7 +36,9 @@ describe('payment lifecycle (API-level demo scenario)', () => {
 
     const paid = await getPayment(t, acme.admin, created.id);
     expect(paid.status).toBe('PAID');
-    expect(paid.providerPaymentId).toMatch(/^pp_/);
+    expect(paid.providerPaymentId).toMatch(/^SIM-[0-9A-F]{10}$/);
+    expect(paid.reference).toMatch(/^PB-\d{4}-\d{6}$/);
+    expect(paid.reconciliation).toBeNull(); // no run has covered it yet
     expect(paid.timeline.map((h: any) => h.toStatus)).toEqual(['CREATED', 'APPROVED', 'PROCESSING', 'PAID']);
     expect(paid.ledgerTransactions.map((x: any) => x.type)).toEqual(['PAYMENT_HOLD', 'PAYMENT_CAPTURE', 'PAYOUT_SETTLEMENT']);
     expect(paid.ledgerTransactions.every((x: any) => x.balanced)).toBe(true);
@@ -56,6 +58,7 @@ describe('payment lifecycle (API-level demo scenario)', () => {
     expect(report.items).toHaveLength(1);
     expect(report.items[0]).toMatchObject({ status: 'MATCHED', reasonCodes: [] });
     expect(run.issueCount).toBe(0);
+    expect((await getPayment(t, acme.admin, created.id)).reconciliation).toMatchObject({ status: 'MATCHED', reasonCodes: [] });
 
     const audit = (await t.http.get(`/api/v1/audit-logs?entityId=${created.id}&pageSize=100`).set(auth(platform.token)).expect(200)).body.data;
     expect(audit.map((a: any) => a.action)).toEqual(expect.arrayContaining(['PAYMENT_CREATED', 'COMPLIANCE_CHECKED', 'PAYMENT_APPROVAL_GRANTED', 'PAYMENT_APPROVED', 'PAYMENT_PROCESSING', 'PAYMENT_PAID']));

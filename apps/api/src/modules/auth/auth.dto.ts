@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 const lower = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
 
@@ -13,4 +13,5 @@ export class RegisterDto {
 export class LoginDto {
   @ApiProperty({ example: 'admin@acme.test' }) @Transform(lower) @IsEmail() email: string;
   @ApiProperty() @IsString() @MinLength(1) @MaxLength(128) password: string;
+  @ApiPropertyOptional({ description: 'Keep the session for the full refresh lifetime; otherwise it ends with the browser session (at most 12 hours).' }) @IsOptional() @IsBoolean() rememberMe?: boolean;
 }

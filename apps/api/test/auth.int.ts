@@ -69,6 +69,21 @@ describe('authentication, RBAC and API conventions', () => {
       await t.http.post('/api/v1/auth/refresh').expect(401);
     });
 
+    it('"remember me" sets a persistent cookie; otherwise the session ends with the browser', async () => {
+      const session = await t.http.post('/api/v1/auth/login').send({ email: acme.emails.viewer, password: PASSWORD }).expect(200);
+      expect(session.headers['set-cookie'][0]).not.toMatch(/Expires=/i);
+      const persistent = await t.http.post('/api/v1/auth/login').send({ email: acme.emails.viewer, password: PASSWORD, rememberMe: true }).expect(200);
+      expect(persistent.headers['set-cookie'][0]).toMatch(/Expires=/i);
+      // Rotation keeps the choice.
+      const rotated = await t.http.post('/api/v1/auth/refresh').set('Cookie', persistent.headers['set-cookie'][0].split(';')[0]).expect(200);
+      expect(rotated.headers['set-cookie'][0]).toMatch(/Expires=/i);
+      const rotatedSession = await t.http.post('/api/v1/auth/refresh').set('Cookie', session.headers['set-cookie'][0].split(';')[0]).expect(200);
+      expect(rotatedSession.headers['set-cookie'][0]).not.toMatch(/Expires=/i);
+      const shortLived = await t.prisma.refreshToken.findFirstOrThrow({ where: { persistent: false }, orderBy: { createdAt: 'desc' } });
+      expect(shortLived.expiresAt.getTime() - shortLived.createdAt.getTime()).toBeLessThanOrEqual(12 * 3_600_000 + 5_000);
+      await t.http.post('/api/v1/auth/login').send({ email: acme.emails.viewer, password: PASSWORD, rememberMe: 'yes' }).expect(400);
+    });
+
     it('refuses a cookie-authenticated refresh from a foreign origin', async () => {
       const res = await t.http.post('/api/v1/auth/login').send({ email: acme.emails.viewer, password: PASSWORD }).expect(200);
       const cookie = res.headers['set-cookie'][0].split(';')[0];

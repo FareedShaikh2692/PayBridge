@@ -8,47 +8,54 @@
  * Spacing uses Tailwind's 4px scale: 1 (4) 2 (8) 3 (12) 4 (16) 6 (24) 8 (32) 12 (48) 16 (64) 20 (80) 24 (96) 30 (120).
  */
 :root {
-  /* Surfaces */
-  --background: 247 248 250;
-  --card: 255 255 255;
-  --muted: 241 244 248;
-  --border: 224 229 236;
+  /* Surfaces — mostly neutral; colour is reserved for meaning */
+  --background: 248 250 252;   /* #F8FAFC */
+  --card: 255 255 255;         /* #FFFFFF */
+  --muted: 241 245 249;        /* #F1F5F9 */
+  --border: 226 232 240;       /* #E2E8F0 */
 
   /* Text */
-  --foreground: 15 23 42;
-  --muted-foreground: 82 94 112;
-  --faint: 92 103 121;
+  --foreground: 15 23 42;      /* #0F172A */
+  --muted-foreground: 71 85 105; /* #475569 */
+  --faint: 100 116 139;        /* #64748B */
 
-  /* Brand: one deep navy, used for calls to action, active states and key links */
-  --primary: 18 46 92;
-  --primary-hover: 11 32 68;
-  --primary-soft: 232 238 247;
+  /* Brand */
+  --primary: 37 99 235;        /* #2563EB — actions, links, active states */
+  --primary-hover: 29 78 216;  /* #1D4ED8 */
+  --primary-soft: 239 246 255; /* #EFF6FF */
   --primary-foreground: 255 255 255;
-  --navy-900: 9 20 43;
-  --navy-800: 13 30 61;
-  --navy-700: 22 44 84;
-  --info: 37 87 167;
+  --navy-900: 11 18 32;        /* #0B1220 — dark surfaces */
+  --navy-800: 17 24 39;        /* #111827 */
+  --navy-700: 30 41 59;        /* #1E293B */
+  --info: 37 99 235;
 
-  /* Status: always paired with an icon and a label */
-  --success: 17 107 64;
-  --success-soft: 228 244 234;
-  --warning: 133 85 0;
-  --warning-soft: 253 241 214;
-  --error: 176 35 24;
-  --error-soft: 251 233 231;
+  /*
+   * Status. The bright value (#16A34A, #D97706, #DC2626) is used for dots, icons and graphics, where 3:1 is
+   * enough. Text uses the darker default so it meets 4.5:1 on white and on the soft tint.
+   */
+  --success: 21 128 61;        /* #15803D text */
+  --success-bright: 22 163 74; /* #16A34A */
+  --success-soft: 240 253 244;
+  --warning: 180 83 9;         /* #B45309 text */
+  --warning-bright: 217 119 6; /* #D97706 */
+  --warning-soft: 255 251 235;
+  --error: 185 28 28;          /* #B91C1C text */
+  --error-bright: 220 38 38;   /* #DC2626 */
+  --error-soft: 254 242 242;
 
   /* Charts and signals */
-  --chart-1: 42 120 214;
-  --signal: 245 183 61;
+  --chart-1: 37 99 235;
+  --signal: 217 119 6;
 
   /* Shape, depth, motion */
   --radius-sm: 6px;
   --radius-md: 8px;
+  --radius-control: 10px;
   --radius-lg: 12px;
   --radius-xl: 16px;
-  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.05);
-  --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.05);
-  --shadow-lg: 0 16px 40px -12px rgb(15 23 42 / 0.22);
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-md: 0 6px 16px -6px rgb(15 23 42 / 0.10), 0 2px 4px -2px rgb(15 23 42 / 0.04);
+  --shadow-lg: 0 24px 48px -16px rgb(15 23 42 / 0.18), 0 2px 6px rgb(15 23 42 / 0.04);
   --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
 }
 
@@ -73,22 +80,23 @@
   .card-interactive { @apply transition duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-raised; }
 
   /* Buttons: primary, secondary, ghost, destructive, link — each with hover, focus, active and disabled states */
-  .btn { @apply inline-flex min-h-9 select-none items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent px-3.5 py-1.5 text-sm font-medium transition duration-200 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50; }
+  .btn { @apply inline-flex min-h-[38px] select-none items-center justify-center gap-2 whitespace-nowrap rounded-control border border-transparent px-4 py-1.5 text-sm font-medium transition duration-200 active:translate-y-px disabled:pointer-events-none disabled:opacity-50; }
   .btn-lg { @apply min-h-11 px-5 text-[15px]; }
-  .btn-sm { @apply min-h-8 px-2.5 text-xs; }
-  .btn-primary { @apply btn bg-primary text-primary-foreground shadow-card hover:bg-primary-hover hover:shadow-raised; }
-  .btn-secondary { @apply btn border-border bg-card text-foreground shadow-card hover:border-primary/30 hover:bg-muted; }
+  .btn-sm { @apply min-h-8 rounded-md px-2.5 text-xs; }
+  .btn-primary { @apply btn bg-primary text-primary-foreground shadow-[0_1px_2px_rgb(37_99_235/0.25),inset_0_1px_0_rgb(255_255_255/0.12)] hover:bg-primary-hover hover:shadow-raised; }
+  .btn-secondary { @apply btn border-border bg-card text-foreground shadow-card hover:border-slate-300 hover:bg-background; }
   .btn-ghost { @apply btn text-primary hover:bg-primary-soft; }
-  .btn-danger { @apply btn bg-error text-white shadow-card hover:brightness-95; }
+  .btn-danger { @apply btn bg-error-bright text-white shadow-card hover:bg-error; }
   .btn-link { @apply inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline; }
 
-  .input { @apply block min-h-[38px] w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground shadow-card transition duration-200 placeholder:text-ink-faint hover:border-primary/30 focus:border-info focus:outline-none focus:ring-2 focus:ring-info/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground; }
+  .input { @apply block min-h-[40px] w-full rounded-control border border-border bg-card px-3 py-2 text-sm text-foreground shadow-card transition duration-200 placeholder:text-ink-faint hover:border-primary/30 focus:border-info focus:outline-none focus:ring-2 focus:ring-info/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground; }
   .input[aria-invalid='true'] { @apply border-error focus:border-error focus:ring-error/20; }
   .label { @apply mb-1.5 block text-[13px] font-medium text-foreground; }
 
   .table-wrap { @apply overflow-x-auto; }
   .table { @apply w-full border-collapse text-left text-sm; }
-  .table th { @apply whitespace-nowrap border-b border-border bg-muted/60 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground; }
+  .table th { @apply whitespace-nowrap border-b border-border bg-background px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground; }
+  .table-sticky th { @apply sticky top-0 z-10; }
   .table td { @apply border-b border-border px-4 py-3 align-middle; }
   .table tbody tr:last-child td { @apply border-b-0; }
   .table tbody tr { @apply transition-colors duration-150; }
@@ -96,6 +104,9 @@
   .table .link.num { @apply whitespace-nowrap; }
 
   .link { @apply font-medium text-primary underline-offset-4 hover:underline; }
-  .eyebrow { @apply text-xs font-semibold uppercase tracking-[0.14em] text-info; }
+  .eyebrow { @apply text-xs font-semibold uppercase tracking-[0.16em] text-primary; }
+  /* Scroll reveal: content fades up once as it enters the viewport (see useInView). */
+  .reveal { @apply translate-y-3 opacity-0 transition duration-500 ease-out; }
+  .reveal[data-visible='true'] { @apply translate-y-0 opacity-100; }
   .skeleton { @apply animate-shimmer rounded-md; background: linear-gradient(90deg, rgb(var(--muted)) 25%, rgb(var(--border)) 37%, rgb(var(--muted)) 63%); background-size: 400% 100%; }
 }
