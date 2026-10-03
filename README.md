@@ -5,7 +5,7 @@
 
 A simulated UAE → India SME cross-border payments platform. A UAE company onboards, passes simulated KYB, funds a simulated AED wallet, locks an AED → INR quote and sends a payment that travels through compliance rules, maker-checker approval, a double-entry ledger, a mock payout provider with signed webhooks, three-way reconciliation and an immutable audit trail.
 
-**Live demo:** https://paybridge-web-red.vercel.app · **API docs (Swagger):** https://paybridge-api.vercel.app/api/docs
+**Live demo:** https://paybridge-web-red.vercel.app (with a recorded product walkthrough under *Watch Product Demo*) · **API docs (Swagger):** https://paybridge-api.vercel.app/api/docs
 
 ## What it demonstrates
 
@@ -82,7 +82,7 @@ Test tokens in a beneficiary name change the outcome: `TEST-FAIL` (payout fails 
 |---|---:|---|
 | Shared domain (unit + property) | 32 | `pnpm --filter @paybridge/shared test` |
 | API unit | 26 | `pnpm --filter @paybridge/api test:unit` |
-| API integration (real PostgreSQL) | 156 | `pnpm test:int` |
+| API integration (real PostgreSQL) | 157 | `pnpm test:int` |
 | Browser end-to-end (Playwright), incl. accessibility and responsive checks | 14 | `pnpm test:e2e` |
 
 All pass locally. The integration suite covers the eight mandatory invariants: every ledger transaction balances; debits equal credits; no expired quote can be used; no quote is used twice; no payment is processed twice; a duplicate webhook does not duplicate ledger entries; a duplicate `Idempotency-Key` does not create a second payment; Company A cannot reach Company B's data. Details in [docs/TESTING.md](docs/TESTING.md).

@@ -262,8 +262,8 @@ export function Stat({ label, value, sub, testId, icon: Icon, unit, trend, class
         <p className="text-[13px] font-medium text-muted-foreground">{label}</p>
         {Icon && <Icon aria-hidden="true" className="h-4 w-4 text-ink-faint" />}
       </div>
-      <p className="num mt-3 flex items-baseline gap-1.5 text-[24px] font-semibold leading-none tracking-[-0.02em] sm:text-[30px]">
-        {unit && <span className="text-sm font-medium tracking-normal text-muted-foreground">{unit}</span>}
+      <p className="num mt-3 flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-[24px] font-semibold leading-none tracking-[-0.02em] sm:text-[28px] xl:text-[30px]">
+        {unit && <span className="shrink-0 text-sm font-medium tracking-normal text-muted-foreground">{unit}</span>}
         {value}
       </p>
       {(sub || trend) && (

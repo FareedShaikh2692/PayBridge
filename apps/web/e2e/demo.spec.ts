@@ -144,7 +144,10 @@ test('demo scenario: onboarding to a reconciled payment', async ({ page }) => {
     await page.goto(paymentUrl);
     await expectStatus(page, 'PAID');
     await expect(page.getByTestId('compliance-status')).toHaveAttribute('data-status', 'CLEAR');
-    await expect(page.getByRole('cell', { name: /Amount threshold/ })).toBeVisible();
+    await expect(page.getByTestId('compliance-checklist')).toContainText('Amount threshold');
+    await expect(page.getByTestId('compliance-checklist-result')).toHaveText('Approved');
+    await expect(page.getByTestId('payment-lifecycle')).toContainText('Reconciled');
+    await expect(page.getByTestId('ledger-totals-balanced')).toContainText('Balanced');
 
     await page.goto('/ledger');
     await expect(page.getByTestId('trial-balance')).toContainText('The ledger balances');

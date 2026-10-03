@@ -289,10 +289,15 @@ export function ReconciliationDemo() {
   return <ReconciliationCompare testId="demo-reconciliation" reference={DEMO.reference} providerId={DEMO.provider} currency="INR" expected="225865.00" received="225865.00" status="MATCHED" />;
 }
 
-/** Renders its children only once scrolled into view, so their entrance animations play where they are seen. */
+/** Plays its children's entrance animations when they scroll into view. */
 export function OnView({ children, className }: { children: React.ReactNode; className?: string }) {
   const { ref, visible } = useInView<HTMLDivElement>();
-  return <div ref={ref} className={clsx('min-h-[120px]', className)}>{visible ? children : null}</div>;
+  // Always rendered (so the page height never jumps while scrolling); hidden until seen, then remounted so entrance animations play.
+  return (
+    <div ref={ref} className={clsx(!visible && 'invisible', className)}>
+      <div key={visible ? 'seen' : 'unseen'}>{children}</div>
+    </div>
+  );
 }
 
 /* ───────────────────────── FX quote ───────────────────────── */

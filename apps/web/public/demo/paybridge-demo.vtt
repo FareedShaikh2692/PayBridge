@@ -1,0 +1,77 @@
+WEBVTT
+
+1
+00:00:00.801 --> 00:00:05.331
+PayBridge — an educational sandbox for UAE → India business payments. No real money moves.
+
+2
+00:00:05.331 --> 00:00:15.571
+Follow one payment through FX, compliance, the ledger, the provider and reconciliation.
+
+3
+00:00:15.571 --> 00:00:21.570
+Sign in with a demo account. First, the Maker.
+
+4
+00:00:21.570 --> 00:00:25.534
+The overview: balance, volume, payment status and recent payments.
+
+5
+00:00:25.534 --> 00:00:27.114
+New payment: choose the beneficiary — Acme India Pvt Ltd, Mumbai.
+
+6
+00:00:27.114 --> 00:00:32.510
+Lock an AED → INR quote: rate, spread and fee shown up front, valid for 60 seconds.
+
+7
+00:00:32.510 --> 00:00:37.318
+Compliance rules run before the payment is submitted.
+
+8
+00:00:37.318 --> 00:00:39.374
+Review and submit. Funds are held in the ledger straight away.
+
+9
+00:00:39.374 --> 00:00:47.724
+Payment created — it now needs a second person to approve it (maker-checker).
+
+10
+00:00:47.724 --> 00:00:55.041
+Now the Approver signs in and approves.
+
+11
+00:00:55.041 --> 00:00:59.838
+The mock provider processes the payout and reports back with signed webhooks.
+
+12
+00:00:59.838 --> 00:01:03.873
+Paid. Hold, capture and settlement are posted — debits equal credits in every currency.
+
+13
+00:01:03.873 --> 00:01:08.291
+Every compliance rule is listed with its result.
+
+14
+00:01:08.291 --> 00:01:12.965
+Finally, a platform admin runs reconciliation.
+
+15
+00:01:12.965 --> 00:01:18.985
+Webhooks: received, signature verified, persisted, then applied — once.
+
+16
+00:01:18.985 --> 00:01:23.239
+Reconciliation compares the internal payment, the provider record and the ledger.
+
+17
+00:01:23.239 --> 00:01:28.458
+Matched: expected and received amounts agree, with zero difference.
+
+18
+00:01:28.458 --> 00:01:32.962
+Created → Compliance → Approved → Processing → Paid → Reconciled.
+
+19
+00:01:32.962 --> 00:01:35.965
+PayBridge · Educational Sandbox — No Real Money Movement.

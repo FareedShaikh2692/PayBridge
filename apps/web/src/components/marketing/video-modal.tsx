@@ -48,8 +48,9 @@ export function ProductDemoButton({ className = 'btn-secondary btn-lg' }: { clas
         {open && (
           <div className="relative aspect-video bg-black">
             <video ref={video} className="h-full w-full" controls autoPlay playsInline preload="metadata" poster="/demo/paybridge-demo-poster.jpg">
+              <source src="/demo/paybridge-demo.webm" type="video/webm" />
               <source src="/demo/paybridge-demo.mp4" type="video/mp4" />
-              <track kind="captions" src="/demo/paybridge-demo.vtt" srcLang="en" label="English" default />
+              <track kind="captions" src="/demo/paybridge-demo.vtt" srcLang="en" label="English" />
               Your browser cannot play this video.
             </video>
             <span aria-hidden="true" className="pointer-events-none absolute right-3 top-3 flex items-center gap-1.5 rounded-md bg-black/40 px-2 py-1 text-[11px] font-semibold text-white/80 backdrop-blur-sm">

@@ -8,6 +8,7 @@ const API_URL = (process.env.API_URL ?? 'http://localhost:4000').replace(/\/$/, 
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  devIndicators: false,
   transpilePackages: ['@paybridge/shared'],
   outputFileTracingRoot: root,
   ...(process.env.NEXT_OUTPUT === 'standalone' ? { output: 'standalone' } : {}),

@@ -21,18 +21,28 @@ test.describe('landing page', () => {
     await page.goto('/');
     await expect(page.getByTestId('sandbox-banner')).toContainText('Educational Sandbox — No Real Money Movement');
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Cross-Border Payments');
-    for (const id of ['how-it-works', 'features', 'lifecycle', 'dashboard', 'security']) await expect(page.locator(`#${id}`)).toBeAttached();
+    for (const id of ['flow', 'demo', 'ledger', 'architecture']) await expect(page.locator(`#${id}`)).toBeAttached();
     await noOverflow(page);
 
     // Navigation scrolls to its section.
-    await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Features' }).click();
-    await expect(page.locator('#features')).toBeInViewport();
+    await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Live demo' }).click();
+    await expect(page.locator('#demo')).toBeInViewport();
 
-    // The lifecycle timeline shows the matching detail for the step in focus.
-    await page.getByRole('button', { name: /Quote created/ }).hover();
-    await expect(page.getByRole('heading', { name: 'FX quote', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: /Compliance cleared/ }).focus();
-    await expect(page.getByRole('heading', { name: 'Compliance checks' })).toBeVisible();
+    // The interactive demo plays its lifecycle and switches between detail tabs.
+    await expect(page.getByTestId('demo-status')).toHaveText('Paid', { timeout: 10_000 });
+    const demo = page.getByTestId('payment-demo');
+    await expect(demo.getByTestId('demo-compliance-result')).toHaveText('Approved');
+    await demo.getByRole('tab', { name: 'Ledger' }).click();
+    await expect(demo.getByTestId('demo-ledger-balanced')).toContainText('Balanced');
+    await demo.getByRole('tab', { name: 'Reconciliation' }).click();
+    await expect(demo.getByTestId('demo-reconciliation')).toContainText('MATCHED');
+
+    // The product demo video opens in a dialog and closes again.
+    await page.goto('/');
+    await page.getByTestId('watch-demo').click();
+    await expect(page.getByRole('dialog', { name: /product demo/ }).locator('video')).toBeVisible();
+    await page.getByRole('button', { name: 'Close demo video' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
 
     // Footer links resolve.
     await page.getByRole('contentinfo').getByRole('link', { name: 'Documentation' }).click();
@@ -62,8 +72,8 @@ test.describe('landing page', () => {
       await page.goto('/');
       if (width < 768) {
         await page.getByRole('button', { name: 'Open menu' }).click();
-        await page.getByRole('navigation', { name: 'Primary mobile' }).getByRole('link', { name: 'Security' }).click();
-        await expect(page.locator('#security')).toBeInViewport();
+        await page.getByRole('navigation', { name: 'Primary mobile' }).getByRole('link', { name: 'Architecture' }).click();
+        await expect(page.locator('#architecture')).toBeInViewport();
         await expect(page.getByRole('navigation', { name: 'Primary mobile' })).toHaveCount(0);
       }
     });
@@ -96,7 +106,7 @@ test.describe('sign-in', () => {
     await page.goto('/login');
     await page.getByRole('button', { name: 'Continue with demo account' }).click();
     await expect(page.getByTestId('user-role')).toHaveText('Maker');
-    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeVisible();
   });
 });
 
