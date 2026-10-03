@@ -8,7 +8,7 @@ import type { Me } from './types';
 interface AuthState {
   me: Me | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<Me>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<Me>;
   logout: () => Promise<void>;
   reload: () => Promise<Me | null>;
   can: (...permissions: string[]) => boolean;
@@ -47,8 +47,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [reload]);
 
   const login = useCallback(
-    async (email: string, password: string) => {
-      const res = await api.post<{ accessToken: string }>('/auth/login', { email, password }, { noRetry: true });
+    async (email: string, password: string, rememberMe = false) => {
+      const res = await api.post<{ accessToken: string }>('/auth/login', { email, password, rememberMe }, { noRetry: true });
       setAccessToken(res.accessToken);
       setSessionHint(true);
       queryClient.clear();

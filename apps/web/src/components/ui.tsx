@@ -148,7 +148,6 @@ export function useInView<T extends Element>(options: IntersectionObserverInit =
     }, options);
     io.observe(el);
     return () => io.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
   return { ref, visible };
 }
@@ -256,9 +255,9 @@ export function Card({ title, actions, children, className, padded = true }: { t
   );
 }
 
-export function Stat({ label, value, sub, testId, icon: Icon, unit, trend }: { label: string; value: React.ReactNode; sub?: React.ReactNode; testId?: string; icon?: LucideIcon; unit?: string; trend?: { value: string; direction: 'up' | 'down' | 'flat' } | null }) {
+export function Stat({ label, value, sub, testId, icon: Icon, unit, trend, className }: { className?: string; label: string; value: React.ReactNode; sub?: React.ReactNode; testId?: string; icon?: LucideIcon; unit?: string; trend?: { value: string; direction: 'up' | 'down' | 'flat' } | null }) {
   return (
-    <div className="card p-5" data-testid={testId}>
+    <div className={clsx('card p-5', className)} data-testid={testId}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[13px] font-medium text-muted-foreground">{label}</p>
         {Icon && <Icon aria-hidden="true" className="h-4 w-4 text-ink-faint" />}

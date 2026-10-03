@@ -7,10 +7,11 @@ import { useEffect, useState } from 'react';
 import { Logo } from '@/components/brand';
 
 const LINKS = [
-  { href: '/#how-it-works', id: 'how-it-works', label: 'How it works' },
-  { href: '/#features', id: 'features', label: 'Features' },
-  { href: '/#lifecycle', id: 'lifecycle', label: 'Lifecycle' },
-  { href: '/#security', id: 'security', label: 'Security' },
+  { href: '/#flow', id: 'flow', label: 'Payment flow' },
+  { href: '/#demo', id: 'demo', label: 'Live demo' },
+  { href: '/#ledger', id: 'ledger', label: 'Ledger' },
+  { href: '/#architecture', id: 'architecture', label: 'Architecture' },
+  { href: '/docs', id: 'docs', label: 'Docs' },
 ];
 
 export function Navbar() {
@@ -54,7 +55,7 @@ export function Navbar() {
         <div className="hidden items-center gap-2 md:flex">
           <Link href="/login" className="btn-ghost">Sign in</Link>
           <Link href="/login" className="btn-primary group">
-            Enter sandbox <ArrowRight aria-hidden="true" className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+            Explore the Sandbox <ArrowRight aria-hidden="true" className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
           </Link>
         </div>
         <button className="btn-secondary !px-2.5 md:hidden" aria-expanded={open} aria-controls="mobile-menu" aria-label={open ? 'Close menu' : 'Open menu'} onClick={() => setOpen((v) => !v)}>
@@ -71,7 +72,7 @@ export function Navbar() {
             ))}
             <div className="mt-2 grid grid-cols-2 gap-2 border-t border-border pt-3">
               <Link href="/login" className="btn-secondary">Sign in</Link>
-              <Link href="/login" className="btn-primary">Enter sandbox</Link>
+              <Link href="/login" className="btn-primary">Explore</Link>
             </div>
           </div>
         </nav>

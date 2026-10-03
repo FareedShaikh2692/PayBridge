@@ -17,7 +17,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div aria-hidden="true" className="absolute inset-0 opacity-[0.06] [background-image:linear-gradient(white_1px,transparent_1px),linear-gradient(90deg,white_1px,transparent_1px)] [background-size:32px_32px] [mask-image:linear-gradient(to_bottom,black,transparent_85%)]" />
         <Link href="/" className="relative w-fit rounded-md" aria-label="PayBridge home"><Logo tone="light" /></Link>
         <div className="relative max-w-md">
-          <p className="text-3xl font-semibold leading-tight tracking-tight">Cross-border payment engineering, simplified.</p>
+          <p className="text-3xl font-semibold leading-tight tracking-tight">Cross-border payments, built for learning.</p>
+          <p className="mt-3 text-white/65">Sign in to a sandbox that runs FX pricing, compliance, a double-entry ledger, provider webhooks and reconciliation end to end — on fictional data.</p>
           <ul className="mt-10 space-y-5">
             {POINTS.map(([Icon, title, text]) => (
               <li key={title} className="flex gap-4">
@@ -33,10 +34,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <p className="relative text-xs text-white/55">A learning project. Not a bank or a licensed payment service; it moves no money.</p>
       </aside>
 
-      <main className="flex flex-col px-5 py-8 sm:px-8">
+      <main className="flex flex-col bg-background px-4 py-8 sm:px-8">
         <Link href="/" className="w-fit rounded-md lg:hidden" aria-label="PayBridge home"><Logo /></Link>
-        <div className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center py-8">{children}</div>
-        <p className="text-center text-xs text-muted-foreground">Educational environment · No real money movement · Do not enter real financial or identity data</p>
+        <div className="mx-auto flex w-full max-w-[440px] flex-1 flex-col justify-center py-8"><div className="sm:card sm:p-8">{children}</div></div>
+        <p className="text-center text-xs text-muted-foreground"><span className="font-semibold text-foreground">Educational Sandbox</span> · No real money movement. Do not enter real financial or identity data.</p>
       </main>
     </div>
   );

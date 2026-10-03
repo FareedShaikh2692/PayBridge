@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Fragment, useState } from 'react';
 import { Alert, Badge, Card, Empty, ErrorNote, PageHeader, Pagination, QueryState, Stat, StatusBadge } from '@/components/ui';
 import { api, qs, type PageMeta } from '@/lib/api';
+import { ReconciliationCompare } from '@/components/payment-visuals';
 import { formatDateTime, titleCase } from '@/lib/format';
 
 interface Run {
@@ -127,6 +128,21 @@ export default function ReconciliationPage() {
                             {open === i.id && (
                               <tr>
                                 <td colSpan={7} className="!bg-surface-sunken">
+                                  {i.paymentId && (
+                                    <div className="mb-4 max-w-2xl">
+                                      <ReconciliationCompare
+                                        testId="recon-compare"
+                                        reference={i.paymentReference ?? '—'}
+                                        providerId={i.provider?.records?.[0]?.providerPaymentId ?? null}
+                                        currency={i.provider?.records?.[0]?.currency?.trim() ?? 'INR'}
+                                        expected={i.internal?.destinationAmount ?? null}
+                                        received={i.provider?.records?.[0]?.amount ?? null}
+                                        status={i.status}
+                                      />
+                                    </div>
+                                  )}
+                                  <details>
+                                  <summary className="mb-2 cursor-pointer text-xs font-medium text-primary">Raw snapshots</summary>
                                   <div className="grid gap-3 md:grid-cols-3">
                                     {[['Internal payment', i.internal], ['Provider record', i.provider], ['Ledger', i.ledger]].map(([label, value]) => (
                                       <div key={label as string}>
@@ -135,6 +151,7 @@ export default function ReconciliationPage() {
                                       </div>
                                     ))}
                                   </div>
+                                  </details>
                                 </td>
                               </tr>
                             )}

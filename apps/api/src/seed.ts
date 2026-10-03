@@ -123,6 +123,7 @@ async function main() {
   const priya = await addBeneficiary(acmeMaker, 'Priya Enterprises');
   const mumbai = await addBeneficiary(acmeMaker, 'Mumbai Supplies Pvt Ltd', 'Sandbox National Bank');
   const failing = await addBeneficiary(acmeMaker, 'Kolkata Textiles (TEST-FAIL)');
+  await addBeneficiary(acmeMaker, 'Acme India Pvt Ltd', 'Sandbox National Bank'); // the landing page's demo payee
   await addBeneficiary(acmeMaker, 'TEST-SANCTION Holdings'); // created BLOCKED by the mock screening
   const chennai = await addBeneficiary(gulfMaker, 'Chennai Components Pvt Ltd');
 

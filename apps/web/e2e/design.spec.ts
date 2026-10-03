@@ -42,7 +42,7 @@ test.describe('landing page', () => {
 
     // Primary call to action.
     await page.goto('/');
-    await page.getByRole('main').getByRole('link', { name: 'Enter sandbox' }).first().click();
+    await page.getByRole('main').getByRole('link', { name: 'Explore the Sandbox' }).first().click();
     await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
     expect(errors).toEqual([]);
   });

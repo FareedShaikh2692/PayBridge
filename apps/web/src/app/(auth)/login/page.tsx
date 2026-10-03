@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, FlaskConical } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
@@ -11,7 +11,7 @@ import { Alert, Button, Field, Input } from '@/components/ui';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
-const schema = z.object({ email: z.string().min(1, 'Enter your email address').email('Enter a valid email address'), password: z.string().min(1, 'Enter your password') });
+const schema = z.object({ email: z.string().min(1, 'Enter your email address').email('Enter a valid email address'), password: z.string().min(1, 'Enter your password'), rememberMe: z.boolean() });
 type Form = z.infer<typeof schema>;
 
 // Seeded test accounts. They exist only in the sandbox database and hold fictional data.
@@ -40,18 +40,19 @@ function LoginForm() {
   const [error, setError] = useState<unknown>(null);
   const [pending, setPending] = useState<string | null>(null); // which action is in flight
   const [done, setDone] = useState(false);
-  const { register, handleSubmit, formState } = useForm<Form>({ resolver: zodResolver(schema) });
+  const { register, handleSubmit, formState } = useForm<Form>({ resolver: zodResolver(schema), defaultValues: { rememberMe: false } });
+  const [forgot, setForgot] = useState(false);
   const target = next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
 
   useEffect(() => {
     if (!loading && me && !done) router.replace(target);
   }, [loading, me, done, router, target]);
 
-  const signIn = async (email: string, password: string, action: string) => {
+  const signIn = async (email: string, password: string, action: string, rememberMe = false) => {
     setError(null);
     setPending(action);
     try {
-      const user = await login(email, password);
+      const user = await login(email, password, rememberMe);
       setDone(true);
       // A brief confirmation before the redirect, so the transition does not feel abrupt.
       setTimeout(() => router.replace(!user.company && !user.isPlatformAdmin ? '/company' : target), 450);
@@ -67,13 +68,29 @@ function LoginForm() {
       <h1 className="text-[28px] leading-tight">Welcome back</h1>
       <p className="mt-2 text-muted-foreground">Sign in to your sandbox</p>
 
-      <form onSubmit={handleSubmit((v) => signIn(v.email, v.password, 'form'))} className="mt-8 space-y-5" noValidate>
+      <form onSubmit={handleSubmit((v) => signIn(v.email, v.password, 'form', v.rememberMe))} className="mt-8 space-y-5" noValidate>
         <Field label="Email address" htmlFor="email" error={formState.errors.email?.message}>
           <Input id="email" type="email" autoComplete="username" placeholder="you@example.test" invalid={Boolean(formState.errors.email)} disabled={busy} {...register('email')} />
         </Field>
         <Field label="Password" htmlFor="password" error={formState.errors.password?.message}>
           <Input id="password" type="password" autoComplete="current-password" invalid={Boolean(formState.errors.password)} disabled={busy} {...register('password')} />
         </Field>
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm">
+            <input type="checkbox" className="h-4 w-4 rounded border-border text-primary focus-visible:ring-2 focus-visible:ring-primary/40" disabled={busy} {...register('rememberMe')} />
+            Remember me
+          </label>
+          <button type="button" className="min-h-[44px] text-sm font-medium text-primary hover:underline" aria-expanded={forgot} aria-controls="forgot-help" onClick={() => setForgot((f) => !f)}>
+            Forgot password?
+          </button>
+        </div>
+        {forgot && (
+          <div id="forgot-help" className="animate-fade-up">
+            <Alert tone="info" title="No password reset in the sandbox">
+              PayBridge sends no email, so there is no reset link. The demo accounts below all share one published password. For an account you registered yourself, register again with a new email.
+            </Alert>
+          </div>
+        )}
         {error ? <Alert tone="bad" title="Unable to sign in." testId="error">{signInMessage(error)}</Alert> : null}
         {done ? (
           <div role="status" className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-success-soft font-medium text-success">
@@ -86,9 +103,10 @@ function LoginForm() {
         )}
       </form>
 
-      <div className="my-8 flex items-center gap-3 text-xs font-medium uppercase tracking-wider text-ink-faint">
-        <span className="h-px flex-1 bg-border" /> Sandbox access <span className="h-px flex-1 bg-border" />
-      </div>
+      <div className="mt-8 rounded-xl border border-border bg-background p-4">
+        <p className="flex items-center gap-2 text-sm font-semibold"><FlaskConical aria-hidden="true" className="h-4 w-4 text-primary" /> Sandbox Demo</p>
+        <p className="mt-1 text-[13px] text-muted-foreground">Use demo credentials to explore the platform. All data is fictional.</p>
+        <div className="mt-4">
 
       <Button variant="secondary" size="lg" className="w-full" loading={pending === 'demo'} loadingLabel="Signing in…" disabled={busy || done} onClick={() => signIn('maker@acme.test', DEMO_PASSWORD, 'demo')}>
         Continue with demo account
@@ -101,6 +119,8 @@ function LoginForm() {
               {label}
             </Button>
           ))}
+        </div>
+      </div>
         </div>
       </div>
 

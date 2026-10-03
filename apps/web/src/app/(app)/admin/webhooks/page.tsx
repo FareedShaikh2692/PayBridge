@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Fragment, useState } from 'react';
 import { Card, Empty, ErrorNote, PageHeader, Pagination, QueryState, Stat, StatusBadge } from '@/components/ui';
+import { WebhookPipeline } from '@/components/payment-visuals';
 import { api, qs } from '@/lib/api';
 import { formatDateTime, shortId } from '@/lib/format';
 
@@ -36,7 +37,7 @@ export default function WebhooksPage() {
 
   return (
     <>
-      <PageHeader title="Webhooks & jobs" description="Provider events are stored once by event id and applied exactly once. Duplicates are acknowledged and ignored; stale or out-of-order events are recorded as ignored." />
+      <PageHeader title="Webhooks" description="Provider events are stored once by event id and applied exactly once. Duplicates are acknowledged and ignored; stale or out-of-order events are recorded as ignored." />
       <QueryState query={jobs}>
         {(j) => (
           <div className="mb-6 space-y-4">
@@ -68,6 +69,24 @@ export default function WebhooksPage() {
           </div>
         )}
       </QueryState>
+      {events.data && events.data.items.length > 0 && (() => {
+        const data = events.data;
+        return (
+            <Card title="Live event stream" className="mb-6" actions={<span className="flex items-center gap-1.5 text-xs text-muted-foreground"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success-bright" />Refreshing every 10 s</span>}>
+              <ol className="space-y-4" data-testid="event-stream">
+                {data.items.slice(0, 4).map((e) => (
+                  <li key={e.id} className="grid gap-2 border-l-2 border-border pl-4 md:grid-cols-[220px_1fr] md:items-center">
+                    <div>
+                      <p className="num text-sm font-medium">{e.eventType}</p>
+                      <p className="num text-xs text-muted-foreground">{formatDateTime(e.receivedAt)} · {e.eventId.slice(0, 18)}</p>
+                    </div>
+                    <WebhookPipeline status={e.status} />
+                  </li>
+                ))}
+              </ol>
+            </Card>
+        );
+      })()}
       <Card title="Webhook events" padded={false} actions={
         <div className="flex items-center gap-2">
           <label className="text-xs text-ink-muted" htmlFor="w-status">Status</label>
@@ -97,7 +116,7 @@ export default function WebhooksPage() {
                             <td className="text-right"><button className="btn-ghost" aria-expanded={open === e.id} onClick={() => setOpen(open === e.id ? null : e.id)}>{open === e.id ? 'Hide' : 'Payload'}</button></td>
                           </tr>
                           {open === e.id && (
-                            <tr><td colSpan={6} className="!bg-surface-sunken"><pre className="num overflow-auto text-[11px] leading-relaxed">{JSON.stringify(e.payload, null, 2)}</pre></td></tr>
+                            <tr><td colSpan={6} className="!bg-surface-sunken"><div className="mb-3"><WebhookPipeline status={e.status} /></div><pre className="num overflow-auto text-[11px] leading-relaxed">{JSON.stringify(e.payload, null, 2)}</pre></td></tr>
                           )}
                         </Fragment>
                       ))}

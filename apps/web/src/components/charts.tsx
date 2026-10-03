@@ -3,7 +3,10 @@
 import clsx from 'clsx';
 import { useState } from 'react';
 import { formatAmount, titleCase } from '@/lib/format';
-import { Button, StatusBadge, statusTone, type Tone } from './ui';
+import { Button, statusTone, type Tone } from './ui';
+
+/** Axis labels: 0, 50K, 250K, 1.5M. */
+const compactAmount = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${+(n / 1_000).toFixed(1)}K` : String(n));
 
 const dayLabel = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
@@ -61,7 +64,7 @@ export function VolumeChart({ data, currency, compact = false }: { data: { date:
             {ticks.map((tick) => (
               <g key={tick}>
                 <line x1={padL} x2={W - padR} y1={yTick(tick)} y2={yTick(tick)} stroke="rgb(var(--border))" strokeWidth="1" />
-                <text x={padL - 10} y={yTick(tick) + 4} textAnchor="end" fontSize="11" fill="rgb(var(--muted-foreground))" className="num">{formatAmount(String(tick))}</text>
+                <text x={padL - 10} y={yTick(tick) + 4} textAnchor="end" fontSize="11" fill="rgb(var(--muted-foreground))" className="num">{compactAmount(tick)}</text>
               </g>
             ))}
             <path d={area} fill="rgb(var(--chart-1))" opacity="0.08" />
@@ -138,12 +141,12 @@ export function StatusDonut({ data, size = 148, layout = 'row' }: { data: { stat
           <span className="mt-1 max-w-[80px] text-center text-[11px] leading-tight text-muted-foreground">{focus ? titleCase(focus.status) : 'payments'}</span>
         </div>
       </div>
-      <ul className={clsx('w-full min-w-0', layout === 'stack' ? 'grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2' : 'space-y-1.5')} aria-label="Payments by status">
+      <ul className={clsx('w-full min-w-0', layout === 'stack' ? 'grid grid-cols-1 gap-x-3 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-1' : 'space-y-1.5')} aria-label="Payments by status">
         {(layout === 'stack' ? visible : data).map((d) => (
           <li key={d.status} className={clsx('flex items-center justify-between gap-3 rounded-md px-2 py-1 transition-colors duration-150', hover === d.status && 'bg-muted')} onMouseEnter={() => setHover(d.status)} onMouseLeave={() => setHover(null)}>
             <span className="flex items-center gap-2">
               <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: SEGMENT[statusTone(d.status)] }} />
-              <StatusBadge value={d.status} />
+              <span className="truncate text-[13px] text-foreground">{titleCase(d.status)}</span>
             </span>
             <span className="num font-medium">{d.count}</span>
           </li>

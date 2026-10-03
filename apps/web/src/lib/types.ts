@@ -102,6 +102,7 @@ export interface PaymentDetail extends Payment {
   complianceChecks: { id: string; ruleCode: string; ruleName: string; triggered: boolean; outcome: string; details: any; decidedByName: string | null; decisionNote: string | null; createdAt: string }[];
   approval: { id: string; status: string; requestedByName: string; createdAt: string; resolvedAt: string | null; actions: { id: string; action: string; actorName: string; reason: string | null; createdAt: string }[] } | null;
   ledgerTransactions: LedgerTransaction[];
+  reconciliation: { status: string; reasonCodes: string[]; runAt: string } | null;
 }
 
 export interface Company {

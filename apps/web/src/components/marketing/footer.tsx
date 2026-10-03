@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Logo } from '@/components/brand';
 
 const COLUMNS: { title: string; links: { href: string; label: string }[] }[] = [
-  { title: 'Product', links: [{ href: '/#how-it-works', label: 'How it works' }, { href: '/#features', label: 'Features' }, { href: '/#security', label: 'Security' }] },
+  { title: 'Product', links: [{ href: '/#flow', label: 'Payment flow' }, { href: '/#demo', label: 'Live demo' }, { href: '/#ledger', label: 'Ledger' }, { href: '/#architecture', label: 'Architecture' }] },
   { title: 'Resources', links: [{ href: '/docs', label: 'Documentation' }, { href: '/api/docs', label: 'API reference' }, { href: '/docs#architecture', label: 'Architecture' }] },
   { title: 'Legal', links: [{ href: '/legal#educational-use', label: 'Educational use' }, { href: '/legal#privacy', label: 'Privacy' }, { href: '/legal#terms', label: 'Terms' }] },
 ];

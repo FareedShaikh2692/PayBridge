@@ -14,7 +14,10 @@ const nextConfig = {
   // The browser only ever talks to this origin; the API is reached through this proxy. That keeps the
   // refresh cookie first-party (SameSite=Strict) and means no CORS in the normal path.
   async rewrites() {
-    return [{ source: '/api/:path*', destination: `${API_URL}/api/:path*` }];
+    return [
+      { source: '/api/:path*', destination: `${API_URL}/api/:path*` },
+      { source: '/health/:path*', destination: `${API_URL}/health/:path*` },
+    ];
   },
   async headers() {
     return [

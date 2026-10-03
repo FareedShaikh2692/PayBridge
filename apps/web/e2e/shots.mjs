@@ -24,6 +24,15 @@ for (const target of targets) {
   }
   await page.goto(`${base}${path}`);
   await page.waitForLoadState('networkidle');
+  if (full) {
+    // Scroll through so in-view animations and lazily rendered sections play before the capture.
+    for (let y = 0; y < (await page.evaluate(() => document.body.scrollHeight)); y += 500) {
+      await page.evaluate((top) => window.scrollTo(0, top), y);
+      await page.waitForTimeout(250);
+    }
+    await page.waitForTimeout(2500);
+    await page.evaluate(() => window.scrollTo(0, 0));
+  }
   await page.waitForTimeout(600);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   if (overflow > 0) errors.push(`${name}: horizontal overflow of ${overflow}px at ${width}px`);
